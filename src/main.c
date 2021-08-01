@@ -1,8 +1,11 @@
+#define UART_COMPLEX_MODE 1
+
 #include <stm32f103xb.h>
 #include "dmpfirmware.h"
 #include "timer4.h"
 #include "uart.h"
 #include "i2c.h"
+
 
 #define TRUE 0x01
 #define FALSE 0x00
@@ -21,27 +24,46 @@
 #define MPU_Y_GYRO_OFFSET 0xFFF0
 #define MPU_Z_GYRO_OFFSET 0x003C
 
-#define SAMPLING_PERIOD_US 4916U
+#define SAMPLING_PERIOD_US 9952U
+// 10ms
 
 // Valores con signo en complemento a 2 de 16 bits
-short xAccel = 0;
-short yAccel = 0;
-short zAccel = 0;
-short xGyro = 0;
-short yGyro = 0;
-short zGyro = 0;
-short wQuat = 0;
-short xQuat = 0;
-short yQuat = 0;
-short zQuat = 0;
+short MPU0xAccel = 0;
+short MPU0yAccel = 0;
+short MPU0zAccel = 0;
+short MPU0xGyro = 0;
+short MPU0yGyro = 0;
+short MPU0zGyro = 0;
+short MPU0wQuat = 0;
+short MPU0xQuat = 0;
+short MPU0yQuat = 0;
+short MPU0zQuat = 0;
+
+short MPU1xAccel = 0;
+short MPU1yAccel = 0;
+short MPU1zAccel = 0;
+short MPU1xGyro = 0;
+short MPU1yGyro = 0;
+short MPU1zGyro = 0;
+short MPU1wQuat = 0;
+short MPU1xQuat = 0;
+short MPU1yQuat = 0;
+short MPU1zQuat = 0;
 
 
 unsigned char MPU0InterruptionFlag = 0;
 unsigned char MPU0InterruptionCounter = 0;
 unsigned char* MPU0RawData;
+unsigned char MPU0SampleReadyFlag = 0;
+
 unsigned char MPU1InterruptionFlag = 1;
 unsigned char MPU1InterruptionCounter = 0;    
 unsigned char* MPU1RawData;
+unsigned char MPU1SampleReadyFlag = 0;
+
+unsigned short uartTxCounter = 0;
+
+
 
 
 
@@ -271,8 +293,7 @@ void EXTI1_IRQHandler(){
 
     // Prototipo de la lectura de datos MPU sin multitarea
     //unsigned char* fifoState = readI2C(0xD0,0x72,2);
-    //unsigned char* inputData;
-    
+    //unsigned char* inputData;    
     //if(fifoState >= 28){
     //    inputData = readI2C(0xD0,0x74,28);
     //}
@@ -296,10 +317,11 @@ int main(void){
 
     //--PERIFÉRICOS EXTERNOS----------------------------------------------------------------------------------
     initMPU(0xD0, 0);
+    
 
 
 
-
+    // Evaluar comunicación i2c con MPU 
 
     while(TRUE){
         //GPIOC->ODR ^= GPIO_ODR_ODR13;				// Toggle PC13
@@ -412,21 +434,25 @@ int main(void){
                 MPU0InterruptionCounter = 0;
                 MPU0InterruptionFlag = 0;
 
-                wQuat = (MPU0RawData[0] << 8) + MPU0RawData[1];
-                xQuat = (MPU0RawData[4] << 8) + MPU0RawData[5];
-                yQuat = (MPU0RawData[8] << 8) + MPU0RawData[9];
-                zQuat = (MPU0RawData[12] << 8) + MPU0RawData[13];
+                MPU0wQuat = (MPU0RawData[0] << 8) + MPU0RawData[1];
+                MPU0xQuat = (MPU0RawData[4] << 8) + MPU0RawData[5];
+                MPU0yQuat = (MPU0RawData[8] << 8) + MPU0RawData[9];
+                MPU0zQuat = (MPU0RawData[12] << 8) + MPU0RawData[13];
 
-                xGyro = (MPU0RawData[16] << 8) + MPU0RawData[17];
-                yGyro = (MPU0RawData[18] << 8) + MPU0RawData[18];
-                zGyro = (MPU0RawData[20] << 8) + MPU0RawData[21];
+                MPU0xGyro = (MPU0RawData[16] << 8) + MPU0RawData[17];
+                MPU0yGyro = (MPU0RawData[18] << 8) + MPU0RawData[18];
+                MPU0zGyro = (MPU0RawData[20] << 8) + MPU0RawData[21];
 
-                xAccel = (MPU0RawData[22] << 8) + MPU0RawData[22];
-                yAccel = (MPU0RawData[24] << 8) + MPU0RawData[25];
-                zAccel = (MPU0RawData[26] << 8) + MPU0RawData[27];
+                MPU0xAccel = (MPU0RawData[22] << 8) + MPU0RawData[22];
+                MPU0yAccel = (MPU0RawData[24] << 8) + MPU0RawData[25];
+                MPU0zAccel = (MPU0RawData[26] << 8) + MPU0RawData[27];
 
 
-                MPU0RawData = 0;    
+                MPU0RawData = 0; 
+                
+                
+                MPU0SampleReadyFlag = 1;
+                MPU1SampleReadyFlag = 1;   
 
             }else{
                 MPU0InterruptionCounter = 0;
@@ -435,9 +461,39 @@ int main(void){
         }
 
         // UART TX
+        
+        if(MPU0SampleReadyFlag && MPU1SampleReadyFlag){
+            // if(USART1->SR & USART_SR_TC){
+            //     switch(uartTxCounter){
+            //         case 0:
+            //             USART1->DR = 0x01;
+            //             uartTxCounter++;
+            //             break;
+            //         case 1:
+            //             USART1->DR = 0x0A;
+            //             uartTxCounter++;
+            //             break;
+            //         case 2:
+            //             USART1->DR = '3';
+            //             uartTxCounter++;
+            //             break;
+            //         default:
+            //             USART1->DR = 0x04;
+            //             uartTxCounter=0;
+            //             break;
+            //     }
+            // }
+            unsigned char UartTxEmptyBufferFlag = getUartTxEmptyBufferFlag();
+            if(UartTxEmptyBufferFlag == 0){
+                printf("Hola, imprimir %d metros.\n", 20);
+                MPU0SampleReadyFlag = 0;
+                MPU1SampleReadyFlag = 0;
+            }  
+        }
+
+
 
     }
-
 
     
 

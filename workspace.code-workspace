@@ -8,7 +8,11 @@
 		"files.associations": {
 			"stm32f103xb.h": "c",
 			"core_cm3.h": "c",
-			"system_stm32f1xx.h": "c"
+			"system_stm32f1xx.h": "c",
+			"timer4.h": "c",
+			"dmpfirmware.h": "c",
+			"uart.h": "c",
+			"i2c.h": "c"
 		}
 	}
 }
