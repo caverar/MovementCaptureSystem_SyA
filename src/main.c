@@ -1,8 +1,7 @@
-#define UART_COMPLEX_MODE 1
-
 #include <stm32f103xb.h>
 #include "dmpfirmware.h"
 #include "timer4.h"
+
 #include "uart.h"
 #include "i2c.h"
 
@@ -64,9 +63,9 @@ unsigned char MPU1SampleReadyFlag = 0;
 unsigned short uartTxCounter = 0;
 
 
+extern unsigned char uartTxEmptyBufferFlag;
 
-
-
+extern void DMA1_Channel4_IRQHandler();
 void initMCU(void){
 
     //--Inicialización interface debug---------------------------------------------------------------------
@@ -285,6 +284,142 @@ void initMPU(unsigned char mpu6050Address, unsigned char interruptPin){
     
 }
 
+void getMPUData(unsigned char deviceAddress, unsigned char* MPUInterruptionCounter, unsigned char* MPUInterruptionFlag,
+                short* MPUwQuat, short* MPUxQuat, short* MPUyQuat, short* MPUzQuat,
+                short* MPUxGyro, short* MPUyGyro, short* MPUzGyro,
+                short* MPUxAccel, short* MPUyAccel, short* MPUzAccel,
+                unsigned char** MPURawData, unsigned char* MPUSampleReadyFlag){
+
+    if(*MPUInterruptionFlag){
+
+        if(*MPUInterruptionCounter == 0){
+            readI2C_part1(deviceAddress,0x72,2);
+            (*MPUInterruptionCounter)++;
+        }else if(*MPUInterruptionCounter == 1){
+            if(I2C2->SR1 & I2C_SR1_SB) (*MPUInterruptionCounter)++; 
+
+        }else if(*MPUInterruptionCounter == 2){
+            readI2C_part2(deviceAddress,0x72,2);
+            (*MPUInterruptionCounter)++;
+        }else if(*MPUInterruptionCounter == 3){
+            if(I2C2->SR1 & I2C_SR1_ADDR) (*MPUInterruptionCounter)++;
+
+        }else if(*MPUInterruptionCounter == 4){
+            readI2C_part3(deviceAddress,0x72,2);
+            (*MPUInterruptionCounter)++;
+        }else if(*MPUInterruptionCounter == 5){
+            if(I2C2->SR1 & I2C_SR1_TXE) (*MPUInterruptionCounter)++;
+
+        }else if(*MPUInterruptionCounter == 6){
+            (*MPURawData) = readI2C_part4(deviceAddress,0x72,2);
+            (*MPUInterruptionCounter)++;
+        }else if(*MPUInterruptionCounter == 7){
+            if(I2C2->SR1 & I2C_SR1_SB) (*MPUInterruptionCounter)++;  
+             
+        }else if(*MPUInterruptionCounter == 8){
+            readI2C_part5(deviceAddress,0x72,2);
+            (*MPUInterruptionCounter)++;
+        }else if(*MPUInterruptionCounter == 9){
+            if(I2C2->SR1 & I2C_SR1_ADDR) (*MPUInterruptionCounter)++;
+
+        }else if(*MPUInterruptionCounter == 10){
+            readI2C_part5(deviceAddress,0x72,2);
+            (*MPUInterruptionCounter)++;
+        }else if(*MPUInterruptionCounter == 11){
+            if(I2C2->SR1 & I2C_SR1_ADDR) (*MPUInterruptionCounter)++;
+
+        }else if(*MPUInterruptionCounter == 12){
+            readI2C_part6(deviceAddress,0x72,2);
+            (*MPUInterruptionCounter)++;
+        }else if(*MPUInterruptionCounter == 13){
+            if(DMA1->ISR & DMA_ISR_TCIF5) (*MPUInterruptionCounter)++;
+
+        }else if(*MPUInterruptionCounter == 14){
+
+            readI2C_part7(deviceAddress,0x72,2);
+                
+            unsigned short fifoSize = ((*MPURawData)[0]<<8) + (*MPURawData)[1];
+            if(fifoSize<28){
+                *MPUInterruptionCounter = 0;
+                *MPUInterruptionFlag = 0;
+
+            }else{
+                (*MPUInterruptionCounter)++;
+            }
+            // Lectura RawData x28
+        }else if(*MPUInterruptionCounter == 15){
+            readI2C_part1(deviceAddress,0x74,28);
+            (*MPUInterruptionCounter)++;
+        }else if(*MPUInterruptionCounter == 16){
+            if(I2C2->SR1 & I2C_SR1_SB) (*MPUInterruptionCounter)++; 
+
+        }else if(*MPUInterruptionCounter == 17){
+            readI2C_part2(deviceAddress,0x74,28);
+            (*MPUInterruptionCounter)++;
+        }else if(*MPUInterruptionCounter == 18){
+            if(I2C2->SR1 & I2C_SR1_ADDR) (*MPUInterruptionCounter)++;
+
+        }else if(*MPUInterruptionCounter == 19){
+            readI2C_part3(deviceAddress,0x74,28);
+            (*MPUInterruptionCounter)++;
+        }else if(*MPUInterruptionCounter == 20){
+            if(I2C2->SR1 & I2C_SR1_TXE) (*MPUInterruptionCounter)++;
+
+        }else if(*MPUInterruptionCounter == 21){
+            (*MPURawData) = readI2C_part4(deviceAddress,0x74,28);
+            (*MPUInterruptionCounter)++;
+        }else if(*MPUInterruptionCounter == 22){
+            if(I2C2->SR1 & I2C_SR1_SB) (*MPUInterruptionCounter)++;  
+             
+        }else if(*MPUInterruptionCounter == 23){
+            readI2C_part5(deviceAddress,0x74,28);
+            (*MPUInterruptionCounter)++;
+        }else if(*MPUInterruptionCounter == 24){
+            if(I2C2->SR1 & I2C_SR1_ADDR) (*MPUInterruptionCounter)++;
+
+        }else if(*MPUInterruptionCounter == 25){
+            readI2C_part5(deviceAddress,0x74,28);
+            (*MPUInterruptionCounter)++;
+        }else if(*MPUInterruptionCounter == 26){
+            if(I2C2->SR1 & I2C_SR1_ADDR) (*MPUInterruptionCounter)++;
+
+        }else if(*MPUInterruptionCounter == 27){
+            readI2C_part6(deviceAddress,0x74,28);
+            (*MPUInterruptionCounter)++;
+        }else if(*MPUInterruptionCounter == 28){
+            if(DMA1->ISR & DMA_ISR_TCIF5) (*MPUInterruptionCounter)++;
+
+        }else if(*MPUInterruptionCounter == 29){
+
+            readI2C_part7(deviceAddress,0x74,28);
+            *MPUInterruptionCounter = 0;
+            *MPUInterruptionFlag = 0;
+
+            *MPUwQuat = ((*MPURawData)[0] << 8) + (*MPURawData)[1];
+            *MPUxQuat = ((*MPURawData)[4] << 8) + (*MPURawData)[5];
+            *MPUyQuat = ((*MPURawData)[8] << 8) + (*MPURawData)[9];
+            *MPUzQuat = ((*MPURawData)[12] << 8) + (*MPURawData)[13];
+
+            *MPUxGyro = ((*MPURawData)[16] << 8) + (*MPURawData)[17];
+            *MPUyGyro = ((*MPURawData)[18] << 8) + (*MPURawData)[18];
+            *MPUzGyro = ((*MPURawData)[20] << 8) + (*MPURawData)[21];
+
+            *MPUxAccel = ((*MPURawData)[22] << 8) + (*MPURawData)[22];
+            *MPUyAccel = ((*MPURawData)[24] << 8) + (*MPURawData)[25];
+            *MPUzAccel = ((*MPURawData)[26] << 8) + (*MPURawData)[27];
+
+
+            
+                
+                
+            *MPUSampleReadyFlag = 1;
+  
+
+        }else{
+
+        }
+    }
+}
 
 void EXTI1_IRQHandler(){
     
@@ -318,184 +453,40 @@ int main(void){
     //--PERIFÉRICOS EXTERNOS----------------------------------------------------------------------------------
     initMPU(0xD0, 0);
     
-
+    
 
 
     // Evaluar comunicación i2c con MPU 
 
     while(TRUE){
-        //GPIOC->ODR ^= GPIO_ODR_ODR13;				// Toggle PC13
+        //GPIOC->ODR ^= GPIO_ODR_ODR13;	                                    // Toggle PC13			
         //wait_ms(500);        
 
         // I2C RX-TX
-        // MPU0
-        if(MPU0InterruptionFlag){
 
-            if(MPU0InterruptionCounter == 0){
-                readI2C_part1(0xD0,0x72,2);
-                MPU0InterruptionCounter++;
-            }else if(MPU0InterruptionCounter == 1){
-                if(I2C2->SR1 & I2C_SR1_SB) MPU0InterruptionCounter++; 
-
-            }else if(MPU0InterruptionCounter == 2){
-                readI2C_part2(0xD0,0x72,2);
-                MPU0InterruptionCounter++;
-            }else if(MPU0InterruptionCounter == 3){
-                if(I2C2->SR1 & I2C_SR1_ADDR) MPU0InterruptionCounter++;
-
-            }else if(MPU0InterruptionCounter == 4){
-                readI2C_part3(0xD0,0x72,2);
-                MPU0InterruptionCounter++;
-            }else if(MPU0InterruptionCounter == 5){
-                if(I2C2->SR1 & I2C_SR1_TXE) MPU0InterruptionCounter++;
-
-            }else if(MPU0InterruptionCounter == 6){
-                MPU0RawData = readI2C_part4(0xD0,0x72,2);
-                MPU0InterruptionCounter++;
-            }else if(MPU0InterruptionCounter == 7){
-                if(I2C2->SR1 & I2C_SR1_SB) MPU0InterruptionCounter++;  
-             
-            }else if(MPU0InterruptionCounter == 8){
-                readI2C_part5(0xD0,0x72,2);
-                MPU0InterruptionCounter++;
-            }else if(MPU0InterruptionCounter == 9){
-                if(I2C2->SR1 & I2C_SR1_ADDR) MPU0InterruptionCounter++;
-
-            }else if(MPU0InterruptionCounter == 10){
-                readI2C_part5(0xD0,0x72,2);
-                MPU0InterruptionCounter++;
-            }else if(MPU0InterruptionCounter == 11){
-                if(I2C2->SR1 & I2C_SR1_ADDR) MPU0InterruptionCounter++;
-
-            }else if(MPU0InterruptionCounter == 12){
-                readI2C_part6(0xD0,0x72,2);
-                MPU0InterruptionCounter++;
-            }else if(MPU0InterruptionCounter == 13){
-                if(DMA1->ISR & DMA_ISR_TCIF5) MPU0InterruptionCounter++;
-
-            }else if(MPU0InterruptionCounter == 14){
-
-                readI2C_part7(0xD0,0x72,2);
-                
-                unsigned short fifoSize = (MPU0RawData[0]<<8) + MPU0RawData[1];
-                if(fifoSize<28){
-                    MPU0InterruptionCounter = 0;
-                    MPU0InterruptionFlag = 0;
-
-                }else{
-                    MPU0InterruptionCounter++;
-                }
-            // Lectura RawData x28
-            }else if(MPU0InterruptionCounter == 15){
-                readI2C_part1(0xD0,0x74,28);
-                MPU0InterruptionCounter++;
-            }else if(MPU0InterruptionCounter == 16){
-                if(I2C2->SR1 & I2C_SR1_SB) MPU0InterruptionCounter++; 
-
-            }else if(MPU0InterruptionCounter == 17){
-                readI2C_part2(0xD0,0x74,28);
-                MPU0InterruptionCounter++;
-            }else if(MPU0InterruptionCounter == 18){
-                if(I2C2->SR1 & I2C_SR1_ADDR) MPU0InterruptionCounter++;
-
-            }else if(MPU0InterruptionCounter == 19){
-                readI2C_part3(0xD0,0x74,28);
-                MPU0InterruptionCounter++;
-            }else if(MPU0InterruptionCounter == 20){
-                if(I2C2->SR1 & I2C_SR1_TXE) MPU0InterruptionCounter++;
-
-            }else if(MPU0InterruptionCounter == 21){
-                MPU0RawData = readI2C_part4(0xD0,0x74,28);
-                MPU0InterruptionCounter++;
-            }else if(MPU0InterruptionCounter == 22){
-                if(I2C2->SR1 & I2C_SR1_SB) MPU0InterruptionCounter++;  
-             
-            }else if(MPU0InterruptionCounter == 23){
-                readI2C_part5(0xD0,0x74,28);
-                MPU0InterruptionCounter++;
-            }else if(MPU0InterruptionCounter == 24){
-                if(I2C2->SR1 & I2C_SR1_ADDR) MPU0InterruptionCounter++;
-
-            }else if(MPU0InterruptionCounter == 25){
-                readI2C_part5(0xD0,0x74,28);
-                MPU0InterruptionCounter++;
-            }else if(MPU0InterruptionCounter == 26){
-                if(I2C2->SR1 & I2C_SR1_ADDR) MPU0InterruptionCounter++;
-
-            }else if(MPU0InterruptionCounter == 27){
-                readI2C_part6(0xD0,0x74,28);
-                MPU0InterruptionCounter++;
-            }else if(MPU0InterruptionCounter == 28){
-                if(DMA1->ISR & DMA_ISR_TCIF5) MPU0InterruptionCounter++;
-
-            }else if(MPU0InterruptionCounter == 29){
-
-                readI2C_part7(0xD0,0x74,28);
-                MPU0InterruptionCounter = 0;
-                MPU0InterruptionFlag = 0;
-
-                MPU0wQuat = (MPU0RawData[0] << 8) + MPU0RawData[1];
-                MPU0xQuat = (MPU0RawData[4] << 8) + MPU0RawData[5];
-                MPU0yQuat = (MPU0RawData[8] << 8) + MPU0RawData[9];
-                MPU0zQuat = (MPU0RawData[12] << 8) + MPU0RawData[13];
-
-                MPU0xGyro = (MPU0RawData[16] << 8) + MPU0RawData[17];
-                MPU0yGyro = (MPU0RawData[18] << 8) + MPU0RawData[18];
-                MPU0zGyro = (MPU0RawData[20] << 8) + MPU0RawData[21];
-
-                MPU0xAccel = (MPU0RawData[22] << 8) + MPU0RawData[22];
-                MPU0yAccel = (MPU0RawData[24] << 8) + MPU0RawData[25];
-                MPU0zAccel = (MPU0RawData[26] << 8) + MPU0RawData[27];
+        getMPUData(0xD0, &MPU0InterruptionCounter, &MPU0InterruptionFlag,   // MPU0
+            &MPU0wQuat, &MPU0xQuat, &MPU0yQuat, &MPU0zQuat, 
+            &MPU0xGyro, &MPU0yGyro, &MPU0zGyro, 
+            &MPU0xAccel, &MPU0yAccel, &MPU0zAccel, 
+            &MPU0RawData, &MPU0SampleReadyFlag);
 
 
-                MPU0RawData = 0; 
-                
-                
-                MPU0SampleReadyFlag = 1;
-                MPU1SampleReadyFlag = 1;   
 
-            }else{
-                MPU0InterruptionCounter = 0;
-                MPU0InterruptionFlag = 0;  
-            }
-        }
 
+        MPU1SampleReadyFlag = 1;
         // UART TX
         
         if(MPU0SampleReadyFlag && MPU1SampleReadyFlag){
-            // if(USART1->SR & USART_SR_TC){
-            //     switch(uartTxCounter){
-            //         case 0:
-            //             USART1->DR = 0x01;
-            //             uartTxCounter++;
-            //             break;
-            //         case 1:
-            //             USART1->DR = 0x0A;
-            //             uartTxCounter++;
-            //             break;
-            //         case 2:
-            //             USART1->DR = '3';
-            //             uartTxCounter++;
-            //             break;
-            //         default:
-            //             USART1->DR = 0x04;
-            //             uartTxCounter=0;
-            //             break;
-            //     }
-            // }
-            unsigned char UartTxEmptyBufferFlag = getUartTxEmptyBufferFlag();
-            if(UartTxEmptyBufferFlag == 0){
-                printf("Hola, imprimir %d metros.\n", 20);
+
+
+            if(uartTxEmptyBufferFlag == 0){
+                printf("Hola a todos, muy buenos dias,---------------------- \r\n");
                 MPU0SampleReadyFlag = 0;
                 MPU1SampleReadyFlag = 0;
             }  
         }
-
-
-
     }
-
-    
+   
 
     return 0;
 }

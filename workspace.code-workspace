@@ -12,7 +12,8 @@
 			"timer4.h": "c",
 			"dmpfirmware.h": "c",
 			"uart.h": "c",
-			"i2c.h": "c"
+			"i2c.h": "c",
+			"stm32f1xx_hal.h": "c"
 		}
 	}
 }
