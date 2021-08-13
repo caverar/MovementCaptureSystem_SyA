@@ -136,6 +136,8 @@ unsigned char* readI2C(unsigned char deviceAddress, unsigned char address, unsig
         DMA1_Channel5->CNDTR = size;						// Numero de Bytes a ser transferidos
         DMA1_Channel5->CCR |= DMA_CCR_TCIE;					// Habilitar interrupcion de transferencia completada
         DMA1_Channel5->CCR |= DMA_CCR_MINC;					// Activar incremento de memoria CMAR, cada vez que se realize una transferencia
+        
+
         //DMA1_Channel5->CCR |= DMA_CCR_CIRC;				// Activar modo circular
         DMA1_Channel5->CCR |= DMA_CCR_EN;					// Habilitar canal DMA
 
@@ -218,6 +220,7 @@ unsigned char* readI2C_part4(unsigned char deviceAddress, unsigned char address,
         DMA1_Channel5->CNDTR = size;						// Numero de Bytes a ser transferidos
         DMA1_Channel5->CCR |= DMA_CCR_TCIE;					// Habilitar interrupcion de transferencia completada
         DMA1_Channel5->CCR |= DMA_CCR_MINC;					// Activar incremento de memoria CMAR, cada vez que se realize una transferencia
+        //DMA1_Channel5->CCR &= ~DMA_CCR_PL_Msk;			// minima prioridad
         //DMA1_Channel5->CCR |= DMA_CCR_CIRC;				// Activar modo circular
         DMA1_Channel5->CCR |= DMA_CCR_EN;					// Habilitar canal DMA
 
@@ -260,7 +263,7 @@ void readI2C_part7(unsigned char deviceAddress, unsigned char address, unsigned 
         //I2C2->CR1 &= !I2C_CR1_ACK;						// Disable ACK
         //I2C2->CR2 &= !I2C_CR2_LAST;						// Deshabilitar NACK, cuando se llena el buffer DMA
         I2C2->CR1 |= I2C_CR1_STOP;							// Secuencia de parada
-        DMA1_Channel5->CCR &= !DMA_CCR_EN;					// Deshabilitar canal DMA
+        DMA1_Channel5->CCR &= ~DMA_CCR_EN;					// Deshabilitar canal DMA
         wait_us(4);										    // Espera de 4 us
     }  
 }

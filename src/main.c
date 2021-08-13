@@ -1,10 +1,10 @@
 #include <stm32f103xb.h>
-#include "dmpfirmware.h"
-#include "timer4.h"
 
+#include "timer4.h"
 #include "uart.h"
 #include "i2c.h"
 
+#include "dmpfirmware.h"
 
 #define TRUE 0x01
 #define FALSE 0x00
@@ -453,7 +453,7 @@ int main(void){
     //--PERIFÉRICOS EXTERNOS----------------------------------------------------------------------------------
     initMPU(0xD0, 0);
     
-    
+
 
 
     // Evaluar comunicación i2c con MPU 
@@ -474,16 +474,19 @@ int main(void){
 
 
         MPU1SampleReadyFlag = 1;
+        
         // UART TX
         
-        if(MPU0SampleReadyFlag && MPU1SampleReadyFlag){
+        
+
+        if(MPU0SampleReadyFlag && MPU1SampleReadyFlag && (uartTxEmptyBufferFlag == 0)){
+
+            printf("%1d,%1d,%06d,%06d,%06d,%06d\r\n",1,0,MPU0xAccel,MPU0yAccel,MPU0zAccel,MPU0xGyro);
 
 
-            if(uartTxEmptyBufferFlag == 0){
-                printf("Hola a todos, muy buenos dias,---------------------- \r\n");
-                MPU0SampleReadyFlag = 0;
-                MPU1SampleReadyFlag = 0;
-            }  
+            MPU1SampleReadyFlag = 0;
+            MPU0SampleReadyFlag = 0;
+
         }
     }
    

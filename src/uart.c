@@ -30,7 +30,9 @@ void initUART(void){
 
 	//	Baudios 115200, Baudios = 72MHz/16*USARTDIV, USARTDIV = 39.0625, BRR = 0x0271 
 
-	USART1->BRR = (0x0271); 								// Parte entera y decimal del preescaler de Baudios
+	//	Baudios 230400, Baudios = 72MHz/16*USARTDIV, USARTDIV = 19.05, BRR = 0x0138, real: 230769
+
+	USART1->BRR = (0x0138); 								// Parte entera y decimal del preescaler de Baudios
 	USART1->CR1 |= USART_CR1_TE;							// TE=1, Habilitar transmisor
 	USART1->CR1 |= USART_CR1_RE;							// RE=1, Habilitar receptor
 
@@ -61,18 +63,22 @@ void initDMAComplexMode(void){
 
 
 void DMA1_Channel4_IRQHandler(void){
-	uartTxEmptyBufferFlag = 0;								// Limpiar lag de trasferencia en curso	
+	uartTxEmptyBufferFlag = 0;								// Limpiar lag de trasferencia en curso
+	
+	//while(!(USART1->SR & USART_SR_TC));							
 	DMA1->IFCR |= DMA_IFCR_CTCIF4;							// Limpliar flag de interrupcion de transferencia completa
 	DMA1->IFCR |= DMA_IFCR_CGIF4;							// Limpliar todods los flag de interrupcion  
 	DMA1_Channel4->CCR &= ~DMA_CCR_EN;						// Desactivar transferencia DMA
 
-
+	
 }
 
 
-
+/** 
+* @brief Buffer limitado a ocupación de DMA.
+*/	
 void complexPrint(char *msg, ...){
-	
+
 	if(uartTxEmptyBufferFlag == 0){
 		char buff[300];
 		va_list args;
@@ -84,16 +90,16 @@ void complexPrint(char *msg, ...){
 		for(int i = 0; i < bufferSize; i++){
 			uartTxBuffer[i]=buff[i];		
 		}
-
-		DMA1_Channel4->CMAR = (unsigned int)&(uartTxBuffer[10]);// Dirección de memoria de buffer de lectura
+		uartTxBuffer[bufferSize]=0x00;						// Carácter de final de trama
+		DMA1_Channel4->CMAR = (unsigned int)&uartTxBuffer;	// Dirección de memoria de buffer de lectura
 		DMA1_Channel4->CPAR = (unsigned int)&USART1->DR;	// Dirección de periférico
 
-		bufferSize = 100;
-		DMA1_Channel4->CNDTR = bufferSize;					// Numero de Bytes a ser transferidos
+		DMA1_Channel4->CNDTR = bufferSize+1;				// Numero de Bytes a ser transferidos
 		DMA1_Channel4->CCR |= DMA_CCR_TCIE;					// Habilitar interrupcion de transferencia completada
 		DMA1_Channel4->CCR |= DMA_CCR_MINC;					// Activar incremento de memoria CMAR, cada vez que se realize una transferencia
 		DMA1_Channel4->CCR |= DMA_CCR_DIR;					// Dirección de transferencia Memoria->Periférico
-		//DMA1_Channel4->CCR |= DMA_CCR_CIRC;					// Modo circular
+		//DMA1_Channel4->CCR |= DMA_CCR_PL_Msk;				// Maxima prioridad
+		//DMA1_Channel4->CCR |= DMA_CCR_CIRC;				// Modo circular
 
 
 		USART1->SR &= ~USART_SR_TC;							// Escribir 0 en TC, para limpiar registro tranfer complete, según datasheet.
