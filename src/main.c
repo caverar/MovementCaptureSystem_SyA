@@ -16,12 +16,19 @@
 #define MPU_Y_GYRO_OFFSET_ADDRESS 0x15
 #define MPU_Z_GYRO_OFFSET_ADDRESS 0x17
 
-#define MPU_X_ACCEL_OFFSET 0xFF58
-#define MPU_Y_ACCEL_OFFSET 0xF118
-#define MPU_Z_ACCEL_OFFSET 0x0C94
-#define MPU_X_GYRO_OFFSET 0xFF9C
-#define MPU_Y_GYRO_OFFSET 0xFFF0
-#define MPU_Z_GYRO_OFFSET 0x003C
+#define MPU0_X_ACCEL_OFFSET 0xFF58
+#define MPU0_Y_ACCEL_OFFSET 0xF118
+#define MPU0_Z_ACCEL_OFFSET 0x0C94
+#define MPU0_X_GYRO_OFFSET 0xFF9C
+#define MPU0_Y_GYRO_OFFSET 0xFFF0
+#define MPU0_Z_GYRO_OFFSET 0x003C
+
+#define MPU1_X_ACCEL_OFFSET 0xFF58
+#define MPU1_Y_ACCEL_OFFSET 0xF118
+#define MPU1_Z_ACCEL_OFFSET 0x0C94
+#define MPU1_X_GYRO_OFFSET 0xFF9C
+#define MPU1_Y_GYRO_OFFSET 0xFFF0
+#define MPU1_Z_GYRO_OFFSET 0x003C
 
 #define SAMPLING_PERIOD_US 9952U
 // 10ms
@@ -33,10 +40,17 @@ short MPU0zAccel = 0;
 short MPU0xGyro = 0;
 short MPU0yGyro = 0;
 short MPU0zGyro = 0;
-short MPU0wQuat = 0;
-short MPU0xQuat = 0;
-short MPU0yQuat = 0;
-short MPU0zQuat = 0;
+int MPU0wQuat = 0;
+int MPU0xQuat = 0;
+int MPU0yQuat = 0;
+int MPU0zQuat = 0;
+
+unsigned char MPU0InterruptionFlag = 0;
+unsigned char MPU0InterruptionCounter = 0;
+unsigned char* MPU0RawData;
+unsigned char MPU0SampleReadyFlag = 0;
+unsigned char Button0 =0;
+
 
 short MPU1xAccel = 0;
 short MPU1yAccel = 0;
@@ -44,28 +58,24 @@ short MPU1zAccel = 0;
 short MPU1xGyro = 0;
 short MPU1yGyro = 0;
 short MPU1zGyro = 0;
-short MPU1wQuat = 0;
-short MPU1xQuat = 0;
-short MPU1yQuat = 0;
-short MPU1zQuat = 0;
-
-
-unsigned char MPU0InterruptionFlag = 0;
-unsigned char MPU0InterruptionCounter = 0;
-unsigned char* MPU0RawData;
-unsigned char MPU0SampleReadyFlag = 0;
+int MPU1wQuat = 0;
+int MPU1xQuat = 0;
+int MPU1yQuat = 0;
+int MPU1zQuat = 0;
 
 unsigned char MPU1InterruptionFlag = 1;
 unsigned char MPU1InterruptionCounter = 0;    
 unsigned char* MPU1RawData;
 unsigned char MPU1SampleReadyFlag = 0;
+unsigned char Button1 =0;
+
 
 unsigned short uartTxCounter = 0;
-
-
 extern unsigned char uartTxEmptyBufferFlag;
 
+
 extern void DMA1_Channel4_IRQHandler();
+
 void initMCU(void){
 
     //--Inicialización interface debug---------------------------------------------------------------------
@@ -88,21 +98,38 @@ void initMCU(void){
 
 }
 
-void initBuiltInLed(void){
+void initButtons(void){
 
     //--LEDBUILTIN-PC13--------------------------------------------------------------------------------------
     RCC->APB2ENR |=RCC_APB2ENR_IOPCEN;			            // IOPCEN=1, Habilitar reloj del Puerto C
     GPIOC->CRH &= ~(GPIO_CRH_MODE13 | GPIO_CRH_CNF13);      // Limpiar registros de configuración    
-    GPIOC->CRH |= GPIO_CRH_MODE13;				            // MODE10=0x11, PC13 en modo de salida
-    GPIOC->CRH &= ~GPIO_CRH_CNF13;				            // CNF0=0x00, PC13 en modo de entrada análoga
+    GPIOC->CRH |= GPIO_CRH_MODE13;				            // MODE13=0x11, PC13 en modo de salida
+    GPIOC->CRH &= ~GPIO_CRH_CNF13;				            // CNF13=0x00, PC13 en modo de salida push-pull
     GPIOC->ODR |= GPIO_ODR_ODR13;				            // Salida en uno
+
+    //--PA0 = Botón 1, PA1 = Botón 2--------------------------------------------------------------------------
+    
+    
+    RCC->APB2ENR |=RCC_APB2ENR_IOPAEN;			            // IOPAEN=1, Habilitar reloj del Puerto A
+    
+    //--PA0
+    GPIOA->CRL &= ~(GPIO_CRL_MODE0 | GPIO_CRL_CNF0);        // Limpiar registros de configuración    
+    GPIOA->CRL &= ~GPIO_CRL_MODE0;				            // MODE0=0x00, PA0 en modo de entrada
+    GPIOA->CRL |= GPIO_CRL_CNF0_1;				            // CNF0=0x10, PA0 con resistencias de pull-up/pull-down
+    GPIOA->ODR &= ~GPIO_ODR_ODR0;				            // Resistencia de Pul-down
+
+    //--PA1
+    GPIOA->CRL &= ~(GPIO_CRL_MODE1 | GPIO_CRL_CNF1);        // Limpiar registros de configuración    
+    GPIOA->CRL &= ~GPIO_CRL_MODE1;				            // MODE1=0x00, PA1 en modo de entrada
+    GPIOA->CRL |= GPIO_CRL_CNF1_1;				            // CNF1=0x10, PA1 con resistencias de pull-up/pull-down
+    GPIOA->ODR &= ~GPIO_ODR_ODR1;				            // Resistencia de Pul-down
 
 }
 
-
-void initMPU(unsigned char mpu6050Address, unsigned char interruptPin){
-
-              
+void initMPU(unsigned char mpu6050Address, unsigned char interruptPin,
+            short MPU_X_ACCEL_OFFSET, short MPU_Y_ACCEL_OFFSET,
+            short MPU_Z_ACCEL_OFFSET, short MPU_X_GYRO_OFFSET,
+            short MPU_Y_GYRO_OFFSET, short MPU_Z_GYRO_OFFSET){              
     
     
     //-----------------------Inicializar MPU------------------------------------------------------------------
@@ -285,7 +312,7 @@ void initMPU(unsigned char mpu6050Address, unsigned char interruptPin){
 }
 
 void getMPUData(unsigned char deviceAddress, unsigned char* MPUInterruptionCounter, unsigned char* MPUInterruptionFlag,
-                short* MPUwQuat, short* MPUxQuat, short* MPUyQuat, short* MPUzQuat,
+                int* MPUwQuat, int* MPUxQuat, int* MPUyQuat, int* MPUzQuat,
                 short* MPUxGyro, short* MPUyGyro, short* MPUzGyro,
                 short* MPUxAccel, short* MPUyAccel, short* MPUzAccel,
                 unsigned char** MPURawData, unsigned char* MPUSampleReadyFlag){
@@ -395,18 +422,18 @@ void getMPUData(unsigned char deviceAddress, unsigned char* MPUInterruptionCount
             *MPUInterruptionCounter = 0;
             *MPUInterruptionFlag = 0;
 
-            *MPUwQuat = ((*MPURawData)[0] << 8) + (*MPURawData)[1];
-            *MPUxQuat = ((*MPURawData)[4] << 8) + (*MPURawData)[5];
-            *MPUyQuat = ((*MPURawData)[8] << 8) + (*MPURawData)[9];
-            *MPUzQuat = ((*MPURawData)[12] << 8) + (*MPURawData)[13];
+            *MPUwQuat = ((int)(*MPURawData)[0] << 24) | ((int)(*MPURawData)[1] << 16) | ((int)(*MPURawData)[2] << 8) | (int)(*MPURawData)[3];
+            *MPUxQuat = ((int)(*MPURawData)[4] << 24) | ((int)(*MPURawData)[5] << 16) | ((int)(*MPURawData)[6] << 8) | (int)(*MPURawData)[7];
+            *MPUyQuat = ((int)(*MPURawData)[8] << 24) | ((int)(*MPURawData)[9] << 16) | ((int)(*MPURawData)[10] << 8) | (int)(*MPURawData)[11];
+            *MPUzQuat = ((int)(*MPURawData)[12] << 24) | ((int)(*MPURawData)[13] << 16) | ((int)(*MPURawData)[14] << 8) | (int)(*MPURawData)[15];
 
-            *MPUxGyro = ((*MPURawData)[16] << 8) + (*MPURawData)[17];
-            *MPUyGyro = ((*MPURawData)[18] << 8) + (*MPURawData)[18];
-            *MPUzGyro = ((*MPURawData)[20] << 8) + (*MPURawData)[21];
+            *MPUxGyro = ((*MPURawData)[16] << 8) | (*MPURawData)[17];
+            *MPUyGyro = ((*MPURawData)[18] << 8) | (*MPURawData)[18];
+            *MPUzGyro = ((*MPURawData)[20] << 8) | (*MPURawData)[21];
 
-            *MPUxAccel = ((*MPURawData)[22] << 8) + (*MPURawData)[22];
-            *MPUyAccel = ((*MPURawData)[24] << 8) + (*MPURawData)[25];
-            *MPUzAccel = ((*MPURawData)[26] << 8) + (*MPURawData)[27];
+            *MPUxAccel = ((*MPURawData)[22] << 8) | (*MPURawData)[22];
+            *MPUyAccel = ((*MPURawData)[24] << 8) | (*MPURawData)[25];
+            *MPUzAccel = ((*MPURawData)[26] << 8) | (*MPURawData)[27];
 
 
             
@@ -437,12 +464,19 @@ void EXTI1_IRQHandler(){
 
 }
 
+void getButtonsData(unsigned char* Button0, unsigned char* Button1){
+
+    *Button0 = GPIOA->ODR |= GPIO_ODR_ODR0;
+    *Button1 = GPIOA->ODR |= GPIO_ODR_ODR1;
+}
+
+
 int main(void){
 
-    //--MICROCONTROLADOR-------------------------------------------------------------------------------------
+    //--MICROCONTROLADOR--------------------------------------------------------------------------------------
     
     initMCU();
-    initBuiltInLed();
+    initButtons();
 
     //--PERIFÉRICOS INTERNOS----------------------------------------------------------------------------------
   
@@ -451,18 +485,25 @@ int main(void){
     initTimer4();
 
     //--PERIFÉRICOS EXTERNOS----------------------------------------------------------------------------------
-    initMPU(0xD0, 0);
-    
+    initMPU(0xD0, 0,MPU0_X_ACCEL_OFFSET, MPU0_Y_ACCEL_OFFSET, MPU0_Z_ACCEL_OFFSET, 
+            MPU0_X_GYRO_OFFSET, MPU0_Y_GYRO_OFFSET, MPU0_Z_GYRO_OFFSET);
 
+/*  
+    initMPU(0xD1, 0,MPU0_X_ACCEL_OFFSET, MPU0_Y_ACCEL_OFFSET, MPU0_Z_ACCEL_OFFSET, 
+            MPU0_X_GYRO_OFFSET, MPU0_Y_GYRO_OFFSET, MPU0_Z_GYRO_OFFSET);
+*/
 
-
-    // Evaluar comunicación i2c con MPU 
+    // Evaluar comunicación I2C con MPU 
 
     while(TRUE){
         //GPIOC->ODR ^= GPIO_ODR_ODR13;	                                    // Toggle PC13			
-        //wait_ms(500);        
+        //wait_ms(500);
 
-        // I2C RX-TX
+        // Lectura de botones:
+
+        getButtonsData(&Button0, &Button1);
+
+        // I2C RX-TX:
 
         getMPUData(0xD0, &MPU0InterruptionCounter, &MPU0InterruptionFlag,   // MPU0
             &MPU0wQuat, &MPU0xQuat, &MPU0yQuat, &MPU0zQuat, 
@@ -470,26 +511,27 @@ int main(void){
             &MPU0xAccel, &MPU0yAccel, &MPU0zAccel, 
             &MPU0RawData, &MPU0SampleReadyFlag);
 
-
+/*         
+        getMPUData(0xD0, &MPU0InterruptionCounter, &MPU0InterruptionFlag,   // MPU0
+            &MPU0wQuat, &MPU0xQuat, &MPU0yQuat, &MPU0zQuat, 
+            &MPU0xGyro, &MPU0yGyro, &MPU0zGyro, 
+            &MPU0xAccel, &MPU0yAccel, &MPU0zAccel, 
+            &MPU0RawData, &MPU0SampleReadyFlag); 
+*/
 
 
         MPU1SampleReadyFlag = 1;
         
-        // UART TX
-        
-        
+        // UART TX:           
 
         if(MPU0SampleReadyFlag && MPU1SampleReadyFlag && (uartTxEmptyBufferFlag == 0)){
 
-            printf("%1d,%1d,%06d,%06d,%06d,%06d\r\n",1,0,MPU0xAccel,MPU0yAccel,MPU0zAccel,MPU0xGyro);
-
-
+            printf("%1d,%1d,%06d,%06d,%06d,%06d\r\n",Button0,Button1,MPU0xAccel,MPU0yAccel,MPU0zAccel,MPU0xGyro);
             MPU1SampleReadyFlag = 0;
             MPU0SampleReadyFlag = 0;
 
         }
-    }
-   
+    }   
 
     return 0;
 }

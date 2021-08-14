@@ -4,7 +4,7 @@
 /* ================================================================ *
  | Default MotionApps v6.12 28-byte FIFO packet structure:          |
  |                                                                  |
- | [QUAT W][      ][QUAT X][      ][QUAT Y][      ][QUAT Z][      ] |
+ | [--- QUAT W ---][--- QUAT X ---][--- QUAT Y ---][--- QUAT Z ---] |
  |   0   1   2   3   4   5   6   7   8   9  10  11  12  13  14  15  |
  |                                                                  |
  | [GYRO X][GYRO Y][GYRO Z][ACC X ][ACC Y ][ACC Z ]					|
