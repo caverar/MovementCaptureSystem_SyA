@@ -29,9 +29,14 @@ THE SOFTWARE.
 ===============================================
 */
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifndef _HELPER_3DMATH_H_
 #define _HELPER_3DMATH_H_
 
+#include "math.h"
 class Quaternion {
     public:
         float w;
@@ -214,3 +219,8 @@ class VectorFloat {
 };
 
 #endif /* _HELPER_3DMATH_H_ */
+
+
+#ifdef __cplusplus
+}
+#endif

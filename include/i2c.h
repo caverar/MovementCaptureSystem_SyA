@@ -1,6 +1,10 @@
 #ifndef __I2C_H
 #define __I2C_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void initI2C(void);
 unsigned char* readI2C(unsigned char deviceAddress, unsigned char address, unsigned char size);
 void writeI2C(unsigned char deviceAddress, unsigned char address, unsigned char size, unsigned char *data);
@@ -15,3 +19,6 @@ void readI2C_part7(unsigned char deviceAddress, unsigned char address, unsigned 
 
 #endif
 
+#ifdef __cplusplus
+}
+#endif

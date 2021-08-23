@@ -12,12 +12,14 @@ void initDMASimpleMode(void);
 char uartTxBuffer[300];
 unsigned int bufferSize;
 
-
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #ifdef UART_COMPLEX_MODE
 #define initDMA(void) initDMAComplexMode(void);
 void complexPrint(char *msg, ...);
-#define printf(msg, args...) complexPrint(msg, ##args);
+#define printf(msg, args...) complexPrint((char*)msg, ##args);
 #endif
 
 
@@ -30,3 +32,6 @@ void simplePrint(char *msg, ...);
 
 #endif
 
+#ifdef __cplusplus
+}
+#endif

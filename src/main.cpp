@@ -1,8 +1,14 @@
 #include <stm32f103xb.h>
 
-#include "timer4.h"
-#include "uart.h"
-#include "i2c.h"
+
+extern "C"{
+    #include "timer4.h"
+    #include "uart.h"
+    #include "i2c.h"
+}
+
+
+#include "helper_3dmath.h"
 
 #include "dmpfirmware.h"
 
@@ -30,6 +36,10 @@
 #define MPU1_Y_GYRO_OFFSET 0xFFF0
 #define MPU1_Z_GYRO_OFFSET 0x003C
 
+float MPUMaxYaw = 0;                // Parametors experimentales, dependen del angulo al que se quiere 1
+float MPUMaxPitch = 0;
+float MPUMaxRoll = 0;
+
 #define SAMPLING_PERIOD_US 9952U
 // 10ms
 
@@ -45,11 +55,20 @@ int MPU0xQuat = 0;
 int MPU0yQuat = 0;
 int MPU0zQuat = 0;
 
+float MPU0Yaw = 0.0;
+float MPU0Pitch = 0.0;
+float MPU0Roll = 0.0;
+float MPU0YawNormalized = 0.0;
+float MPU0PitchNormalized = 0.0;
+float MPU0RollNormalized = 0.0;
+
+
 unsigned char MPU0InterruptionFlag = 0;
 unsigned char MPU0InterruptionCounter = 0;
 unsigned char* MPU0RawData;
 unsigned char MPU0SampleReadyFlag = 0;
 unsigned char Button0 =0;
+Quaternion MPU0Quaternion;
 
 
 short MPU1xAccel = 0;
@@ -63,12 +82,16 @@ int MPU1xQuat = 0;
 int MPU1yQuat = 0;
 int MPU1zQuat = 0;
 
+float MPU1YawNormalized = 0.0;
+float MPU1PitchNormalized = 0.0;
+float MPU1RollNormalized = 0.0;
+
 unsigned char MPU1InterruptionFlag = 1;
 unsigned char MPU1InterruptionCounter = 0;    
 unsigned char* MPU1RawData;
 unsigned char MPU1SampleReadyFlag = 0;
 unsigned char Button1 =0;
-
+Quaternion MPU1Quaternion;
 
 unsigned short uartTxCounter = 0;
 extern unsigned char uartTxEmptyBufferFlag;
@@ -448,6 +471,47 @@ void getMPUData(unsigned char deviceAddress, unsigned char* MPUInterruptionCount
     }
 }
 
+void getQuaternion(Quaternion *q, const int* MPUwQuat,const int* MPUxQuat, const int* MPUyQuat, const int* MPUzQuat) {
+
+	// TODO: accommodate different arrangements of sent data (ONLY default supported now)
+	q -> w = (float)(*MPUwQuat >> 16) / 16384.0f;
+	q -> x = (float)(*MPUxQuat >> 16) / 16384.0f;
+	q -> y = (float)(*MPUyQuat >> 16) / 16384.0f;
+	q -> z = (float)(*MPUzQuat >> 16) / 16384.0f;
+}
+void getEuler(Quaternion *q, float* MPUYaw, float* MPUPitch, float* MPURoll){
+    *MPUYaw = atan2(2 * q -> x * q -> y - 2 * q -> w * q -> z, 2 * q -> w * q -> w + 2 * q -> x * q -> x - 1); // psi
+	*MPUPitch = -asin(2 * q -> x * q -> z + 2 * q -> w * q -> y);                      // theta
+	*MPURoll = atan2(2 * q -> y * q -> z - 2 * q -> w * q -> x, 2 * q -> w * q -> w + 2 * q -> z * q -> z - 1); // phi
+}
+
+void normalizeEuler(float* MPUYaw, float* MPUPitch, float* MPURoll, float* MPUYawNormalized, 
+                    float* MPUPitchNormalized, float* MPURollNormalized){
+    
+    *MPUYawNormalized = *MPUYaw / MPUMaxYaw;
+    *MPUPitchNormalized = *MPUPitch / MPUMaxPitch;
+    *MPURollNormalized = *MPURoll / MPUMaxRoll;
+
+    if(*MPUYawNormalized >1){
+        *MPUYawNormalized = 1;
+    }else if(*MPUYawNormalized < -1){
+        *MPUYawNormalized = -1;
+    }
+
+    if(*MPUPitchNormalized >1){
+        *MPUPitchNormalized = 1;
+    }else if(*MPUPitchNormalized < -1){
+        *MPUPitchNormalized = -1;
+    }
+
+    if(*MPURollNormalized >1){
+        *MPURollNormalized = 1;
+    }else if(*MPURollNormalized < -1){
+        *MPURollNormalized = -1;
+    }
+}
+
+
 void EXTI1_IRQHandler(){
     
     
@@ -479,9 +543,12 @@ int main(void){
     initButtons();
 
     //--PERIFÉRICOS INTERNOS----------------------------------------------------------------------------------
-  
+    
     initI2C();
-    initUART();    
+
+
+    initUART();
+
     initTimer4();
 
     //--PERIFÉRICOS EXTERNOS----------------------------------------------------------------------------------
@@ -525,8 +592,10 @@ int main(void){
         // UART TX:           
 
         if(MPU0SampleReadyFlag && MPU1SampleReadyFlag && (uartTxEmptyBufferFlag == 0)){
-
+            
             printf("%1d,%1d,%06d,%06d,%06d,%06d\r\n",Button0,Button1,MPU0xAccel,MPU0yAccel,MPU0zAccel,MPU0xGyro);
+
+            //printf("%1d,%1d,%06d,%06d,%06d,%06d\r\n",Button0,Button1,MPU0xAccel,MPU0yAccel,MPU0zAccel,MPU0xGyro);
             MPU1SampleReadyFlag = 0;
             MPU0SampleReadyFlag = 0;
 

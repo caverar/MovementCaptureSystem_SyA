@@ -1,5 +1,9 @@
 #ifndef __DMPFIRMWARE_H
 #define __DMPFIRMWARE_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
             
 /* ================================================================ *
  | Default MotionApps v6.12 28-byte FIFO packet structure:          |
@@ -218,4 +222,8 @@ const unsigned char dmp_memory[3062] = {
     0xA6, 0xD9, 0x00, 0xD8, 0xF1, 0xFF
 };
 
+#endif
+
+#ifdef __cplusplus
+}
 #endif
