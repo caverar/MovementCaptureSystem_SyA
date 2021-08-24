@@ -1,6 +1,10 @@
 #ifndef __UART_H
 #define __UART_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define UART_COMPLEX_MODE
 
 void initUART(void);
@@ -12,9 +16,7 @@ void initDMASimpleMode(void);
 char uartTxBuffer[300];
 unsigned int bufferSize;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+
 
 #ifdef UART_COMPLEX_MODE
 #define initDMA(void) initDMAComplexMode(void);
@@ -23,15 +25,21 @@ void complexPrint(char *msg, ...);
 #endif
 
 
-#ifndef UART_COMPLEX_MODE //UART_SIMPLE_MODE
+#ifdef UART_SIMPLE_MODE //UART_SIMPLE_MODE
 #define initDMA(void) initDMASimpleMode(void);
 void simplePrint(char *msg, ...);
 #define printf(msg, args...) simplePrint(msg, ##args);
 #endif
 
-
+#ifdef UART_INTERRUPT_MODE
+#define initDMA(void) initDMASimpleMode(void);
+void interruptPrint(char *msg, ...);
+#define printf(msg, args...) interruptPrint(msg, ##args);
 #endif
+
 
 #ifdef __cplusplus
 }
 #endif
+#endif
+

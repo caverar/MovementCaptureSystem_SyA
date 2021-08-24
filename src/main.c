@@ -1,15 +1,10 @@
 #include <stm32f103xb.h>
 
+#include "timer4.h"
+#include "uart.h"
+#include "i2c.h"
 
-extern "C"{
-    #include "timer4.h"
-    #include "uart.h"
-    #include "i2c.h"
-}
-
-
-#include "helper_3dmath.h"
-
+#include "quaternion_utils.h"
 #include "dmpfirmware.h"
 
 #define TRUE 0x01
@@ -22,21 +17,21 @@ extern "C"{
 #define MPU_Y_GYRO_OFFSET_ADDRESS 0x15
 #define MPU_Z_GYRO_OFFSET_ADDRESS 0x17
 
-#define MPU0_X_ACCEL_OFFSET 0xFF58
-#define MPU0_Y_ACCEL_OFFSET 0xF118
-#define MPU0_Z_ACCEL_OFFSET 0x0C94
-#define MPU0_X_GYRO_OFFSET 0xFF9C
-#define MPU0_Y_GYRO_OFFSET 0xFFF0
-#define MPU0_Z_GYRO_OFFSET 0x003C
+#define MPU0_X_ACCEL_OFFSET -2606
+#define MPU0_Y_ACCEL_OFFSET -548
+#define MPU0_Z_ACCEL_OFFSET 2554
+#define MPU0_X_GYRO_OFFSET 60
+#define MPU0_Y_GYRO_OFFSET 1
+#define MPU0_Z_GYRO_OFFSET -47
 
-#define MPU1_X_ACCEL_OFFSET 0xFF58
-#define MPU1_Y_ACCEL_OFFSET 0xF118
-#define MPU1_Z_ACCEL_OFFSET 0x0C94
-#define MPU1_X_GYRO_OFFSET 0xFF9C
-#define MPU1_Y_GYRO_OFFSET 0xFFF0
-#define MPU1_Z_GYRO_OFFSET 0x003C
+#define MPU1_X_ACCEL_OFFSET -118
+#define MPU1_Y_ACCEL_OFFSET -2610
+#define MPU1_Z_ACCEL_OFFSET 2750
+#define MPU1_X_GYRO_OFFSET 3
+#define MPU1_Y_GYRO_OFFSET 14
+#define MPU1_Z_GYRO_OFFSET -26
 
-float MPUMaxYaw = 0;                // Parametors experimentales, dependen del angulo al que se quiere 1
+float MPUMaxYaw = 0;                // Parameters experimentales, dependen del angulo al que se quiere 1
 float MPUMaxPitch = 0;
 float MPUMaxRoll = 0;
 
@@ -58,9 +53,14 @@ int MPU0zQuat = 0;
 float MPU0Yaw = 0.0;
 float MPU0Pitch = 0.0;
 float MPU0Roll = 0.0;
-float MPU0YawNormalized = 0.0;
-float MPU0PitchNormalized = 0.0;
-float MPU0RollNormalized = 0.0;
+float averageMPU0Yaw = 0.0;
+float averageMPU0Pitch = 0.0; 
+float averageMPU0Roll = 0.0; 
+float offsetMPU0Yaw = 0.0; 
+float offsetMPU0Pitch = 0.0; 
+float offsetMPU0Roll = 0.0;
+int filterCounterMPU0 = 0;
+
 
 
 unsigned char MPU0InterruptionFlag = 0;
@@ -68,7 +68,8 @@ unsigned char MPU0InterruptionCounter = 0;
 unsigned char* MPU0RawData;
 unsigned char MPU0SampleReadyFlag = 0;
 unsigned char Button0 =0;
-Quaternion MPU0Quaternion;
+struct Quaternion MPU0Quaternion;
+struct Gravity MPU0Gravity;
 
 
 short MPU1xAccel = 0;
@@ -82,16 +83,28 @@ int MPU1xQuat = 0;
 int MPU1yQuat = 0;
 int MPU1zQuat = 0;
 
-float MPU1YawNormalized = 0.0;
-float MPU1PitchNormalized = 0.0;
-float MPU1RollNormalized = 0.0;
+float MPU1Yaw = 0.0;
+float MPU1Pitch = 0.0;
+float MPU1Roll = 0.0;
+float averageMPU1Yaw = 0.0;
+float averageMPU1Pitch = 0.0; 
+float averageMPU1Roll = 0.0; 
+float offsetMPU1Yaw = 0.0; 
+float offsetMPU1Pitch = 0.0; 
+float offsetMPU1Roll = 0.0;
+int filterCounterMPU1 = 0;
+
+
 
 unsigned char MPU1InterruptionFlag = 1;
 unsigned char MPU1InterruptionCounter = 0;    
 unsigned char* MPU1RawData;
 unsigned char MPU1SampleReadyFlag = 0;
 unsigned char Button1 =0;
-Quaternion MPU1Quaternion;
+struct Quaternion MPU1Quaternion;
+struct Gravity MPU1Gravity;
+
+
 
 unsigned short uartTxCounter = 0;
 extern unsigned char uartTxEmptyBufferFlag;
@@ -338,7 +351,10 @@ void getMPUData(unsigned char deviceAddress, unsigned char* MPUInterruptionCount
                 int* MPUwQuat, int* MPUxQuat, int* MPUyQuat, int* MPUzQuat,
                 short* MPUxGyro, short* MPUyGyro, short* MPUzGyro,
                 short* MPUxAccel, short* MPUyAccel, short* MPUzAccel,
-                unsigned char** MPURawData, unsigned char* MPUSampleReadyFlag){
+                unsigned char** MPURawData, unsigned char* MPUSampleReadyFlag, struct Quaternion* MPUQuaternion, struct Gravity* MPUGravity,
+                float* MPUYaw, float* MPUPitch, float* MPURoll,
+                float* averageMPUYaw, float* averageMPUPitch, float* averageMPURoll, 
+                int* counter, float* offsetMPUYaw, float* offsetMPUPitch, float* offsetMPURoll){
 
     if(*MPUInterruptionFlag){
 
@@ -445,10 +461,17 @@ void getMPUData(unsigned char deviceAddress, unsigned char* MPUInterruptionCount
             *MPUInterruptionCounter = 0;
             *MPUInterruptionFlag = 0;
 
-            *MPUwQuat = ((int)(*MPURawData)[0] << 24) | ((int)(*MPURawData)[1] << 16) | ((int)(*MPURawData)[2] << 8) | (int)(*MPURawData)[3];
-            *MPUxQuat = ((int)(*MPURawData)[4] << 24) | ((int)(*MPURawData)[5] << 16) | ((int)(*MPURawData)[6] << 8) | (int)(*MPURawData)[7];
-            *MPUyQuat = ((int)(*MPURawData)[8] << 24) | ((int)(*MPURawData)[9] << 16) | ((int)(*MPURawData)[10] << 8) | (int)(*MPURawData)[11];
-            *MPUzQuat = ((int)(*MPURawData)[12] << 24) | ((int)(*MPURawData)[13] << 16) | ((int)(*MPURawData)[14] << 8) | (int)(*MPURawData)[15];
+            *MPUwQuat = ((*MPURawData)[0] << 24) | ((*MPURawData)[1] << 16) | ((*MPURawData)[2] << 8) | (*MPURawData)[3];
+            *MPUxQuat = ((*MPURawData)[4] << 24) | ((*MPURawData)[5] << 16) | ((*MPURawData)[6] << 8) | (*MPURawData)[7];
+            *MPUyQuat = ((*MPURawData)[8] << 24) | ((*MPURawData)[9] << 16) | ((*MPURawData)[10] << 8) | (*MPURawData)[11];
+            *MPUzQuat = ((*MPURawData)[12] << 24) | ((*MPURawData)[13] << 16) | ((*MPURawData)[14] << 8) | (*MPURawData)[15];
+
+            //*MPUwQuat = ((*MPURawData)[0] << 8) | (*MPURawData)[1]; 
+            //*MPUxQuat = ((*MPURawData)[4] << 8) | (*MPURawData)[5]; 
+            //*MPUyQuat = ((*MPURawData)[8] << 8) | (*MPURawData)[9];
+            //*MPUzQuat = ((*MPURawData)[12] << 8) | (*MPURawData)[13];
+
+
 
             *MPUxGyro = ((*MPURawData)[16] << 8) | (*MPURawData)[17];
             *MPUyGyro = ((*MPURawData)[18] << 8) | (*MPURawData)[18];
@@ -458,9 +481,20 @@ void getMPUData(unsigned char deviceAddress, unsigned char* MPUInterruptionCount
             *MPUyAccel = ((*MPURawData)[24] << 8) | (*MPURawData)[25];
             *MPUzAccel = ((*MPURawData)[26] << 8) | (*MPURawData)[27];
 
+            getQuaternion(MPUQuaternion,MPUwQuat, MPUxQuat,MPUyQuat, MPUzQuat);
+            getGravity(MPUQuaternion, MPUGravity);
+            getYawPitchRoll(MPUQuaternion, MPUGravity, MPUYaw, MPUPitch, MPURoll);
+
+            filterYawPitchRoll(MPUYaw, MPUPitch, MPURoll, averageMPUYaw, averageMPUPitch, averageMPURoll, 
+                                counter, offsetMPUYaw, offsetMPUPitch, offsetMPURoll);
+
 
             
-                
+            //getEuler(MPUQuaternion, MPUYaw, MPUPitch, MPURoll);
+            //castEuler(MPUYaw, MPUPitch, MPURoll, MPUYawSendable, MPUPitchSendable, MPURollSendable);
+
+
+            //normalizeEuler(MPUYaw, MPUPitch, MPURoll, MPUYawNormalized, MPUPitchNormalized, MPURollNormalized, MPUMaxYaw, MPUMaxPitch, MPUMaxRoll);        
                 
             *MPUSampleReadyFlag = 1;
   
@@ -471,45 +505,7 @@ void getMPUData(unsigned char deviceAddress, unsigned char* MPUInterruptionCount
     }
 }
 
-void getQuaternion(Quaternion *q, const int* MPUwQuat,const int* MPUxQuat, const int* MPUyQuat, const int* MPUzQuat) {
 
-	// TODO: accommodate different arrangements of sent data (ONLY default supported now)
-	q -> w = (float)(*MPUwQuat >> 16) / 16384.0f;
-	q -> x = (float)(*MPUxQuat >> 16) / 16384.0f;
-	q -> y = (float)(*MPUyQuat >> 16) / 16384.0f;
-	q -> z = (float)(*MPUzQuat >> 16) / 16384.0f;
-}
-void getEuler(Quaternion *q, float* MPUYaw, float* MPUPitch, float* MPURoll){
-    *MPUYaw = atan2(2 * q -> x * q -> y - 2 * q -> w * q -> z, 2 * q -> w * q -> w + 2 * q -> x * q -> x - 1); // psi
-	*MPUPitch = -asin(2 * q -> x * q -> z + 2 * q -> w * q -> y);                      // theta
-	*MPURoll = atan2(2 * q -> y * q -> z - 2 * q -> w * q -> x, 2 * q -> w * q -> w + 2 * q -> z * q -> z - 1); // phi
-}
-
-void normalizeEuler(float* MPUYaw, float* MPUPitch, float* MPURoll, float* MPUYawNormalized, 
-                    float* MPUPitchNormalized, float* MPURollNormalized){
-    
-    *MPUYawNormalized = *MPUYaw / MPUMaxYaw;
-    *MPUPitchNormalized = *MPUPitch / MPUMaxPitch;
-    *MPURollNormalized = *MPURoll / MPUMaxRoll;
-
-    if(*MPUYawNormalized >1){
-        *MPUYawNormalized = 1;
-    }else if(*MPUYawNormalized < -1){
-        *MPUYawNormalized = -1;
-    }
-
-    if(*MPUPitchNormalized >1){
-        *MPUPitchNormalized = 1;
-    }else if(*MPUPitchNormalized < -1){
-        *MPUPitchNormalized = -1;
-    }
-
-    if(*MPURollNormalized >1){
-        *MPURollNormalized = 1;
-    }else if(*MPURollNormalized < -1){
-        *MPURollNormalized = -1;
-    }
-}
 
 
 void EXTI1_IRQHandler(){
@@ -568,7 +564,7 @@ int main(void){
 
         // Lectura de botones:
 
-        getButtonsData(&Button0, &Button1);
+        //getButtonsData(&Button0, &Button1);
 
         // I2C RX-TX:
 
@@ -576,26 +572,41 @@ int main(void){
             &MPU0wQuat, &MPU0xQuat, &MPU0yQuat, &MPU0zQuat, 
             &MPU0xGyro, &MPU0yGyro, &MPU0zGyro, 
             &MPU0xAccel, &MPU0yAccel, &MPU0zAccel, 
-            &MPU0RawData, &MPU0SampleReadyFlag);
+            &MPU0RawData, &MPU0SampleReadyFlag, &MPU0Quaternion, &MPU0Gravity,
+            &MPU0Yaw, &MPU0Pitch, &MPU0Roll,
+            &averageMPU0Yaw, &averageMPU0Pitch, &averageMPU0Roll, 
+            &filterCounterMPU0, &offsetMPU0Yaw, &offsetMPU0Pitch, &offsetMPU0Roll); 
 
 /*         
-        getMPUData(0xD0, &MPU0InterruptionCounter, &MPU0InterruptionFlag,   // MPU0
-            &MPU0wQuat, &MPU0xQuat, &MPU0yQuat, &MPU0zQuat, 
-            &MPU0xGyro, &MPU0yGyro, &MPU0zGyro, 
-            &MPU0xAccel, &MPU0yAccel, &MPU0zAccel, 
-            &MPU0RawData, &MPU0SampleReadyFlag); 
+        getMPUData(0xD1, &MPU1InterruptionCounter, &MPU1InterruptionFlag,   // MPU1
+            &MPU1wQuat, &MPU1xQuat, &MPU1yQuat, &MPU1zQuat, 
+            &MPU1xGyro, &MPU1yGyro, &MPU1zGyro, 
+            &MPU1xAccel, &MPU1yAccel, &MPU1zAccel, 
+            &MPU1RawData, &MPU1SampleReadyFlag, &MPU1Quaternion, &MPU1Gravity,
+            &MPU1Yaw, &MPU1Pitch, &MPU1Roll,
+            &averageMPU1Yaw, &averageMPU1Pitch, &averageMPU1Roll, 
+            &filterCounterMPU1, &offsetMPU1Yaw, &offsetMPU1Pitch, &offsetMPU1Roll); ; 
 */
 
-
         MPU1SampleReadyFlag = 1;
+        filterCounterMPU1 = 2000; 
+
+
         
         // UART TX:           
 
         if(MPU0SampleReadyFlag && MPU1SampleReadyFlag && (uartTxEmptyBufferFlag == 0)){
             
-            printf("%1d,%1d,%06d,%06d,%06d,%06d\r\n",Button0,Button1,MPU0xAccel,MPU0yAccel,MPU0zAccel,MPU0xGyro);
+            //printf("%1d,%1d,%06d,%06d,%06d,%06d\r\n",Button0,Button1,MPU0Yaw,MPU0Pitch,MPU1Yaw,MPU1Pitch);
+            //printf("%1d,%1d,%06d,%06d,%06d,%06d\r\n",Button0,Button1,MPU0Yaw,MPU0Pitch,MPU0Roll,MPU0xGyro);
+            
+            
+            //printf("%1d,%1d,%05d,%05d,%05d,%05d\r\n", Button0, Button1, MPU0PitchSendable, MPU0RollSendable, MPU1PitchSendable, MPU1RollSendable);
+            if((filterCounterMPU0 >=200) && (filterCounterMPU1 >=200)){
+                //printf("%d,%d\r\n",(int)(MPU0Pitch*1000),(int)(MPU0Roll*1000));
+                printf("%1d,%1d,%05d,%05d,%05d,%05d\r\n", Button0, Button1, (int)(MPU0Pitch*1000), (int)(MPU0Roll*1000), (int)(MPU1Pitch*1000), (int)(MPU1Roll*1000));
+            }
 
-            //printf("%1d,%1d,%06d,%06d,%06d,%06d\r\n",Button0,Button1,MPU0xAccel,MPU0yAccel,MPU0zAccel,MPU0xGyro);
             MPU1SampleReadyFlag = 0;
             MPU0SampleReadyFlag = 0;
 

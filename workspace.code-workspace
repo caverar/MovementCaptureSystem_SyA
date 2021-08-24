@@ -14,7 +14,8 @@
 			"uart.h": "c",
 			"i2c.h": "c",
 			"stm32f1xx_hal.h": "c",
-			"helper_3dmath.h": "c"
+			"helper_3dmath.h": "c",
+			"quaternion_utils.h": "c"
 		}
 	}
 }

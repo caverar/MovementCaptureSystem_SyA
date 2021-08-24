@@ -126,7 +126,23 @@ void simplePrint(char *msg, ...){
 		while(!(USART1->SR & USART_SR_TC));
 	}
 }
+// Pending
+void interruptPrint(char *msg, ...){
+
+	char buff[300];
+	va_list args;
+	va_start(args,msg);
+	vsprintf(buff,msg,args);
+	uartTxEmptyBufferFlag = 1;							// Activar Flag de transferencia en curso
+	bufferSize = strlen(buff);
+
+	for(int i = 0; i < bufferSize; i++){
+		uartTxBuffer[i]=buff[i];		
+	}
+	uartTxBuffer[bufferSize]=0x00;						// Carácter de final de trama
 
 
+
+}
 
 
