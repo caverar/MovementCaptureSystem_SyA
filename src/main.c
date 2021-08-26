@@ -2,20 +2,17 @@
 
 #include "timer4.h"
 #include "uart.h"
-#include "i2c.h"
 
+#include "i2c.h"
 #include "quaternion_utils.h"
-#include "dmpfirmware.h"
+// #include "dmpfirmware.h"
+
+#include "MPU6050.h"
 
 #define TRUE 0x01
 #define FALSE 0x00
 
-#define MPU_X_ACCEL_OFFSET_ADDRESS 0x06
-#define MPU_Y_ACCEL_OFFSET_ADDRESS 0x08
-#define MPU_Z_ACCEL_OFFSET_ADDRESS 0x0A
-#define MPU_X_GYRO_OFFSET_ADDRESS 0x13
-#define MPU_Y_GYRO_OFFSET_ADDRESS 0x15
-#define MPU_Z_GYRO_OFFSET_ADDRESS 0x17
+
 
 #define MPU0_X_ACCEL_OFFSET -2606
 #define MPU0_Y_ACCEL_OFFSET -548
@@ -31,7 +28,7 @@
 #define MPU1_Y_GYRO_OFFSET 14
 #define MPU1_Z_GYRO_OFFSET -26
 
-float MPUMaxYaw = 0;                // Parameters experimentales, dependen del angulo al que se quiere 1
+float MPUMaxYaw = 0;                                        // Parameters experimentales, dependen del angulo al que se quiere 1
 float MPUMaxPitch = 0;
 float MPUMaxRoll = 0;
 
@@ -96,7 +93,7 @@ int filterCounterMPU1 = 0;
 
 
 
-unsigned char MPU1InterruptionFlag = 1;
+unsigned char MPU1InterruptionFlag = 0;
 unsigned char MPU1InterruptionCounter = 0;    
 unsigned char* MPU1RawData;
 unsigned char MPU1SampleReadyFlag = 0;
@@ -105,9 +102,11 @@ struct Quaternion MPU1Quaternion;
 struct Gravity MPU1Gravity;
 
 
+unsigned char i2cMPUCurrentUser;
 
-unsigned short uartTxCounter = 0;
 extern unsigned char uartTxEmptyBufferFlag;
+
+unsigned char uartSamplingCounter = 0;                            // Contador para muestreo de datos, cada 5 muestras reales. (50ms)
 
 
 extern void DMA1_Channel4_IRQHandler();
@@ -162,365 +161,20 @@ void initButtons(void){
 
 }
 
-void initMPU(unsigned char mpu6050Address, unsigned char interruptPin,
-            short MPU_X_ACCEL_OFFSET, short MPU_Y_ACCEL_OFFSET,
-            short MPU_Z_ACCEL_OFFSET, short MPU_X_GYRO_OFFSET,
-            short MPU_Y_GYRO_OFFSET, short MPU_Z_GYRO_OFFSET){              
+
+
+
+void EXTI1_IRQHandler(){    
     
-    
-    //-----------------------Inicializar MPU------------------------------------------------------------------
+    MPU1InterruptionFlag = 1;
+    EXTI->PR |= EXTI_PR_PR1;                                // Limpiar interrupcion pendiente    
 
-    //int *inputI2CBuffer; 
-    unsigned char outputI2CBuffer[16] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; 
-    
-    //inputI2CBuffer = readI2C(0xD0,0x6B,2);
-
-    
-    outputI2CBuffer[0] = 0x80;
-    writeI2C(mpu6050Address,0x6B,1,outputI2CBuffer);                  // Reset MPU6050    
-    
-    outputI2CBuffer[0] = 0x00;                              
-    writeI2C(mpu6050Address,0x6A,1,outputI2CBuffer);                  // Reset FIFO
-
-    wait_ms(200);
-
-    // Carga DMP
-
-    outputI2CBuffer[0] = 0x00;                              
-    writeI2C(mpu6050Address,0x6B,1,outputI2CBuffer);
-    outputI2CBuffer[0] = 0x00;                              
-    writeI2C(mpu6050Address,0x6C,1,outputI2CBuffer);    
-    outputI2CBuffer[0] = 0x03;                              
-    writeI2C(mpu6050Address,0x1A,1,outputI2CBuffer);
-    outputI2CBuffer[0] = 0x18;                              
-    writeI2C(mpu6050Address,0x1B,1,outputI2CBuffer);
-    outputI2CBuffer[0] = 0x00;                              
-    writeI2C(mpu6050Address,0x1C,1,outputI2CBuffer);
-    outputI2CBuffer[0] = 0x00;                              
-    writeI2C(mpu6050Address,0x23,1,outputI2CBuffer);
-    outputI2CBuffer[0] = 0x00;                              
-    writeI2C(mpu6050Address,0x38,1,outputI2CBuffer);
-    outputI2CBuffer[0] = 0x04;                              
-    writeI2C(mpu6050Address,0x6A,1,outputI2CBuffer);    
-    outputI2CBuffer[0] = 0x04;                              
-    writeI2C(mpu6050Address,0x19,1,outputI2CBuffer);   
-
-    // firmware
-
-    int i = 0;
-    int j = 0;
-
-    for(i = 0; i<192; i++){
-        
-        short data = 0x0000 + (i*0x10);
-        outputI2CBuffer[0] = (data >> 8);
-        outputI2CBuffer[1] = data; 
-        writeI2C(mpu6050Address,0x6D,2,outputI2CBuffer);
-
-        if(i<191){            
-            for(j = 0; j<16; j++){
-                outputI2CBuffer[j] = dmp_memory[(i*16) + j];   
-            }
-            writeI2C(0xD0,0x6F,16,outputI2CBuffer);
-        }else{            
-            for(j = 0; j<6; j++){
-                outputI2CBuffer[j] = dmp_memory[(i*16) + j];   
-            }
-            writeI2C(mpu6050Address,0x6F,6,outputI2CBuffer);
-        }    
-    }
-
-    outputI2CBuffer[0] = 0x04;
-    outputI2CBuffer[1] = 0x00;                              
-    writeI2C(mpu6050Address,0x70,2,outputI2CBuffer);
-
-
-    // Ajustar valores de offset
-    wait_us(300);
-
-    outputI2CBuffer[0] = (unsigned char) (MPU_X_ACCEL_OFFSET >> 8);
-    outputI2CBuffer[1] = (unsigned char) MPU_X_ACCEL_OFFSET;
-    writeI2C(mpu6050Address,MPU_X_ACCEL_OFFSET_ADDRESS,2,outputI2CBuffer);
-
-    outputI2CBuffer[0] = (unsigned char) (MPU_Y_ACCEL_OFFSET >> 8);
-    outputI2CBuffer[1] = (unsigned char) MPU_Y_ACCEL_OFFSET;
-    writeI2C(mpu6050Address,MPU_Y_ACCEL_OFFSET_ADDRESS,2,outputI2CBuffer);
-
-    outputI2CBuffer[0] = (unsigned char) (MPU_Z_ACCEL_OFFSET >> 8);
-    outputI2CBuffer[1] = (unsigned char) MPU_Z_ACCEL_OFFSET;
-    writeI2C(mpu6050Address,MPU_Z_ACCEL_OFFSET_ADDRESS,2,outputI2CBuffer);
-
-    outputI2CBuffer[0] = (unsigned char) (MPU_X_GYRO_OFFSET >> 8);
-    outputI2CBuffer[1] = (unsigned char) MPU_X_GYRO_OFFSET;
-    writeI2C(mpu6050Address,MPU_X_GYRO_OFFSET_ADDRESS,2,outputI2CBuffer);
-
-    outputI2CBuffer[0] = (unsigned char) (MPU_Y_GYRO_OFFSET >> 8);
-    outputI2CBuffer[1] = (unsigned char) MPU_Y_GYRO_OFFSET;
-    writeI2C(mpu6050Address,MPU_Y_GYRO_OFFSET_ADDRESS,2,outputI2CBuffer);
-
-    outputI2CBuffer[0] = (unsigned char) (MPU_Z_GYRO_OFFSET >> 8);
-    outputI2CBuffer[1] = (unsigned char) MPU_Z_GYRO_OFFSET;
-    writeI2C(mpu6050Address,MPU_Z_GYRO_OFFSET_ADDRESS,2,outputI2CBuffer);
-
-    wait_ms(3);
-
-    outputI2CBuffer[0] = (unsigned char) (MPU_X_ACCEL_OFFSET >> 8);
-    outputI2CBuffer[1] = (unsigned char) MPU_X_ACCEL_OFFSET;
-    outputI2CBuffer[2] = (unsigned char) (MPU_Y_ACCEL_OFFSET >> 8);
-    outputI2CBuffer[3] = (unsigned char) MPU_Y_ACCEL_OFFSET;
-    outputI2CBuffer[4] = (unsigned char) (MPU_Z_ACCEL_OFFSET >> 8);
-    outputI2CBuffer[5] = (unsigned char) MPU_Z_ACCEL_OFFSET;
-    writeI2C(mpu6050Address,MPU_X_ACCEL_OFFSET_ADDRESS,6,outputI2CBuffer);
-
-    wait_ms(3);
-
-    outputI2CBuffer[0] = (unsigned char) (MPU_X_GYRO_OFFSET >> 8);
-    outputI2CBuffer[1] = (unsigned char) MPU_X_GYRO_OFFSET;
-    outputI2CBuffer[2] = (unsigned char) (MPU_Y_GYRO_OFFSET >> 8);
-    outputI2CBuffer[3] = (unsigned char) MPU_Y_GYRO_OFFSET;
-    outputI2CBuffer[4] = (unsigned char) (MPU_Z_GYRO_OFFSET >> 8);
-    outputI2CBuffer[5] = (unsigned char) MPU_Z_GYRO_OFFSET;
-    writeI2C(mpu6050Address,MPU_X_GYRO_OFFSET_ADDRESS,6,outputI2CBuffer);
-
-    wait_ms(3); 
-
-    // Interruption pin bypass configuration
-    outputI2CBuffer[0] = 0x02;
-    writeI2C(mpu6050Address,0x37,1,outputI2CBuffer);
-
-    // FIFO Buffer configuration
-    outputI2CBuffer[0] = 0xC0;
-    writeI2C(mpu6050Address,0x6A,1,outputI2CBuffer);
-
-    // Interruption pin bypass configuration
-    outputI2CBuffer[0] = 0x02;
-    writeI2C(mpu6050Address,0x38,1,outputI2CBuffer);
-    // First Read
-    MPU0RawData = readI2C(0xD0,0x72,2);
-
-    //wait_ms(5);
-
-
-    //-----------------------Inicializar pin interrupcion-----------------------------------------------------
-
-    if(interruptPin==0){
-        // Pin B1
-        
-        RCC->APB2ENR |=RCC_APB2ENR_IOPBEN;			        // IOPBEN=1, Habilitar reloj del Puerto B
-        GPIOB->CRL &= ~(GPIO_CRL_MODE1 | GPIO_CRL_CNF1);    // Limpiar registros de configuración
-        GPIOB->CRL &= ~GPIO_CRL_MODE1;				        // MODE1=0x00, PB1 en modo de entrada
-        GPIOB->CRL |= GPIO_CRL_CNF1_1;				        // CNF1=0x10,  PB1 en modo pull-up/pull-down
-        GPIOB->ODR &= ~GPIO_ODR_ODR1;						// ODR1=0 Habilitar resistencia de PullDown
-
-
-        // Linea 1, dado que se usa B1. Ejemplos: Linea 2: EXT2, A2,C2,B2, etc
-
-        RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;                 // Habilitar reloj de AFIO
-        AFIO->EXTICR[0] |= AFIO_EXTICR1_EXTI1_PB;           // Habilitar interrupcion en PB1
-        EXTI->IMR |=  EXTI_IMR_MR1;                         // Mask interrupcion de linea 1
-        EXTI->RTSR |= EXTI_RTSR_TR1;                        // Habilitar trigger con rising edge
-        NVIC_EnableIRQ(EXTI1_IRQn);                         // Habilitar interrupciones de la linea 1 
-
-        //EXTI->SWIER |= EXTI_SWIER_SWI1;                   // Software interrupt 
-        //EXTI->PR |= EXTI_PR_PR1;                          // Limpiar interrupcion pendiente   
-
-    }else{
-        // Pin B1
-        
-        RCC->APB2ENR |=RCC_APB2ENR_IOPBEN;			        // IOPBEN=1, Habilitar reloj del Puerto B
-        GPIOB->CRL &= ~(GPIO_CRL_MODE1 | GPIO_CRL_CNF1);    // Limpiar registros de configuración
-        GPIOB->CRL &= ~GPIO_CRL_MODE1;				        // MODE1=0x00, PB1 en modo de entrada
-        GPIOB->CRL |= GPIO_CRL_CNF1_1;				        // CNF1=0x10,  PB1 en modo pull-up/pull-down
-        GPIOB->ODR &= ~GPIO_ODR_ODR1;						// ODR1=0 Habilitar resistencia de PullDown
-
-        // Linea 1, dado que se usa B1. Ejemplos: Linea 2: EXT2, A2,C2,B2, etc
-    
-        RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;                 // Habilitar reloj de AFIO
-        AFIO->EXTICR[0] |= AFIO_EXTICR1_EXTI1_PB;           // Habilitar interrupcion en PB1
-        EXTI->IMR |=  EXTI_IMR_MR1;                         // Mask interrupcion de linea 1
-        EXTI->RTSR |= EXTI_RTSR_TR1;                        // Habilitar trigger con rising edge
-        NVIC_EnableIRQ(EXTI1_IRQn);                         // Habilitar interrupciones de la linea 1 
-    
-        //EXTI->SWIER |= EXTI_SWIER_SWI1;                   // Software interrupt 
-        //EXTI->PR |= EXTI_PR_PR1;                          // Limpiar interrupcion pendiente   
-    }
-    
 }
 
-void getMPUData(unsigned char deviceAddress, unsigned char* MPUInterruptionCounter, unsigned char* MPUInterruptionFlag,
-                int* MPUwQuat, int* MPUxQuat, int* MPUyQuat, int* MPUzQuat,
-                short* MPUxGyro, short* MPUyGyro, short* MPUzGyro,
-                short* MPUxAccel, short* MPUyAccel, short* MPUzAccel,
-                unsigned char** MPURawData, unsigned char* MPUSampleReadyFlag, struct Quaternion* MPUQuaternion, struct Gravity* MPUGravity,
-                float* MPUYaw, float* MPUPitch, float* MPURoll,
-                float* averageMPUYaw, float* averageMPUPitch, float* averageMPURoll, 
-                int* counter, float* offsetMPUYaw, float* offsetMPUPitch, float* offsetMPURoll){
-
-    if(*MPUInterruptionFlag){
-
-        if(*MPUInterruptionCounter == 0){
-            readI2C_part1(deviceAddress,0x72,2);
-            (*MPUInterruptionCounter)++;
-        }else if(*MPUInterruptionCounter == 1){
-            if(I2C2->SR1 & I2C_SR1_SB) (*MPUInterruptionCounter)++; 
-
-        }else if(*MPUInterruptionCounter == 2){
-            readI2C_part2(deviceAddress,0x72,2);
-            (*MPUInterruptionCounter)++;
-        }else if(*MPUInterruptionCounter == 3){
-            if(I2C2->SR1 & I2C_SR1_ADDR) (*MPUInterruptionCounter)++;
-
-        }else if(*MPUInterruptionCounter == 4){
-            readI2C_part3(deviceAddress,0x72,2);
-            (*MPUInterruptionCounter)++;
-        }else if(*MPUInterruptionCounter == 5){
-            if(I2C2->SR1 & I2C_SR1_TXE) (*MPUInterruptionCounter)++;
-
-        }else if(*MPUInterruptionCounter == 6){
-            (*MPURawData) = readI2C_part4(deviceAddress,0x72,2);
-            (*MPUInterruptionCounter)++;
-        }else if(*MPUInterruptionCounter == 7){
-            if(I2C2->SR1 & I2C_SR1_SB) (*MPUInterruptionCounter)++;  
-             
-        }else if(*MPUInterruptionCounter == 8){
-            readI2C_part5(deviceAddress,0x72,2);
-            (*MPUInterruptionCounter)++;
-        }else if(*MPUInterruptionCounter == 9){
-            if(I2C2->SR1 & I2C_SR1_ADDR) (*MPUInterruptionCounter)++;
-
-        }else if(*MPUInterruptionCounter == 10){
-            readI2C_part5(deviceAddress,0x72,2);
-            (*MPUInterruptionCounter)++;
-        }else if(*MPUInterruptionCounter == 11){
-            if(I2C2->SR1 & I2C_SR1_ADDR) (*MPUInterruptionCounter)++;
-
-        }else if(*MPUInterruptionCounter == 12){
-            readI2C_part6(deviceAddress,0x72,2);
-            (*MPUInterruptionCounter)++;
-        }else if(*MPUInterruptionCounter == 13){
-            if(DMA1->ISR & DMA_ISR_TCIF5) (*MPUInterruptionCounter)++;
-
-        }else if(*MPUInterruptionCounter == 14){
-
-            readI2C_part7(deviceAddress,0x72,2);
-                
-            unsigned short fifoSize = ((*MPURawData)[0]<<8) + (*MPURawData)[1];
-            if(fifoSize<28){
-                *MPUInterruptionCounter = 0;
-                *MPUInterruptionFlag = 0;
-
-            }else{
-                (*MPUInterruptionCounter)++;
-            }
-            // Lectura RawData x28
-        }else if(*MPUInterruptionCounter == 15){
-            readI2C_part1(deviceAddress,0x74,28);
-            (*MPUInterruptionCounter)++;
-        }else if(*MPUInterruptionCounter == 16){
-            if(I2C2->SR1 & I2C_SR1_SB) (*MPUInterruptionCounter)++; 
-
-        }else if(*MPUInterruptionCounter == 17){
-            readI2C_part2(deviceAddress,0x74,28);
-            (*MPUInterruptionCounter)++;
-        }else if(*MPUInterruptionCounter == 18){
-            if(I2C2->SR1 & I2C_SR1_ADDR) (*MPUInterruptionCounter)++;
-
-        }else if(*MPUInterruptionCounter == 19){
-            readI2C_part3(deviceAddress,0x74,28);
-            (*MPUInterruptionCounter)++;
-        }else if(*MPUInterruptionCounter == 20){
-            if(I2C2->SR1 & I2C_SR1_TXE) (*MPUInterruptionCounter)++;
-
-        }else if(*MPUInterruptionCounter == 21){
-            (*MPURawData) = readI2C_part4(deviceAddress,0x74,28);
-            (*MPUInterruptionCounter)++;
-        }else if(*MPUInterruptionCounter == 22){
-            if(I2C2->SR1 & I2C_SR1_SB) (*MPUInterruptionCounter)++;  
-             
-        }else if(*MPUInterruptionCounter == 23){
-            readI2C_part5(deviceAddress,0x74,28);
-            (*MPUInterruptionCounter)++;
-        }else if(*MPUInterruptionCounter == 24){
-            if(I2C2->SR1 & I2C_SR1_ADDR) (*MPUInterruptionCounter)++;
-
-        }else if(*MPUInterruptionCounter == 25){
-            readI2C_part5(deviceAddress,0x74,28);
-            (*MPUInterruptionCounter)++;
-        }else if(*MPUInterruptionCounter == 26){
-            if(I2C2->SR1 & I2C_SR1_ADDR) (*MPUInterruptionCounter)++;
-
-        }else if(*MPUInterruptionCounter == 27){
-            readI2C_part6(deviceAddress,0x74,28);
-            (*MPUInterruptionCounter)++;
-        }else if(*MPUInterruptionCounter == 28){
-            if(DMA1->ISR & DMA_ISR_TCIF5) (*MPUInterruptionCounter)++;
-
-        }else if(*MPUInterruptionCounter == 29){
-
-            readI2C_part7(deviceAddress,0x74,28);
-            *MPUInterruptionCounter = 0;
-            *MPUInterruptionFlag = 0;
-
-            *MPUwQuat = ((*MPURawData)[0] << 24) | ((*MPURawData)[1] << 16) | ((*MPURawData)[2] << 8) | (*MPURawData)[3];
-            *MPUxQuat = ((*MPURawData)[4] << 24) | ((*MPURawData)[5] << 16) | ((*MPURawData)[6] << 8) | (*MPURawData)[7];
-            *MPUyQuat = ((*MPURawData)[8] << 24) | ((*MPURawData)[9] << 16) | ((*MPURawData)[10] << 8) | (*MPURawData)[11];
-            *MPUzQuat = ((*MPURawData)[12] << 24) | ((*MPURawData)[13] << 16) | ((*MPURawData)[14] << 8) | (*MPURawData)[15];
-
-            //*MPUwQuat = ((*MPURawData)[0] << 8) | (*MPURawData)[1]; 
-            //*MPUxQuat = ((*MPURawData)[4] << 8) | (*MPURawData)[5]; 
-            //*MPUyQuat = ((*MPURawData)[8] << 8) | (*MPURawData)[9];
-            //*MPUzQuat = ((*MPURawData)[12] << 8) | (*MPURawData)[13];
-
-
-
-            *MPUxGyro = ((*MPURawData)[16] << 8) | (*MPURawData)[17];
-            *MPUyGyro = ((*MPURawData)[18] << 8) | (*MPURawData)[18];
-            *MPUzGyro = ((*MPURawData)[20] << 8) | (*MPURawData)[21];
-
-            *MPUxAccel = ((*MPURawData)[22] << 8) | (*MPURawData)[22];
-            *MPUyAccel = ((*MPURawData)[24] << 8) | (*MPURawData)[25];
-            *MPUzAccel = ((*MPURawData)[26] << 8) | (*MPURawData)[27];
-
-            getQuaternion(MPUQuaternion,MPUwQuat, MPUxQuat,MPUyQuat, MPUzQuat);
-            getGravity(MPUQuaternion, MPUGravity);
-            getYawPitchRoll(MPUQuaternion, MPUGravity, MPUYaw, MPUPitch, MPURoll);
-
-            filterYawPitchRoll(MPUYaw, MPUPitch, MPURoll, averageMPUYaw, averageMPUPitch, averageMPURoll, 
-                                counter, offsetMPUYaw, offsetMPUPitch, offsetMPURoll);
-
-
-            
-            //getEuler(MPUQuaternion, MPUYaw, MPUPitch, MPURoll);
-            //castEuler(MPUYaw, MPUPitch, MPURoll, MPUYawSendable, MPUPitchSendable, MPURollSendable);
-
-
-            //normalizeEuler(MPUYaw, MPUPitch, MPURoll, MPUYawNormalized, MPUPitchNormalized, MPURollNormalized, MPUMaxYaw, MPUMaxPitch, MPUMaxRoll);        
-                
-            *MPUSampleReadyFlag = 1;
-  
-
-        }else{
-
-        }
-    }
-}
-
-
-
-
-void EXTI1_IRQHandler(){
-    
+void EXTI0_IRQHandler(){    
     
     MPU0InterruptionFlag = 1;
-
-    // Prototipo de la lectura de datos MPU sin multitarea
-    //unsigned char* fifoState = readI2C(0xD0,0x72,2);
-    //unsigned char* inputData;    
-    //if(fifoState >= 28){
-    //    inputData = readI2C(0xD0,0x74,28);
-    //}
-
-    EXTI->PR |= EXTI_PR_PR1;                                // Limpiar interrupcion pendiente    
+    EXTI->PR |= EXTI_PR_PR0;                                // Limpiar interrupcion pendiente    
 
 }
 
@@ -540,26 +194,37 @@ int main(void){
 
     //--PERIFÉRICOS INTERNOS----------------------------------------------------------------------------------
     
-    initI2C();
-
-
+    initI2C(1);
+    initI2C(2);
     initUART();
-
     initTimer4();
 
     //--PERIFÉRICOS EXTERNOS----------------------------------------------------------------------------------
-    initMPU(0xD0, 0,MPU0_X_ACCEL_OFFSET, MPU0_Y_ACCEL_OFFSET, MPU0_Z_ACCEL_OFFSET, 
-            MPU0_X_GYRO_OFFSET, MPU0_Y_GYRO_OFFSET, MPU0_Z_GYRO_OFFSET);
 
-/*  
-    initMPU(0xD1, 0,MPU0_X_ACCEL_OFFSET, MPU0_Y_ACCEL_OFFSET, MPU0_Z_ACCEL_OFFSET, 
-            MPU0_X_GYRO_OFFSET, MPU0_Y_GYRO_OFFSET, MPU0_Z_GYRO_OFFSET);
-*/
+    initMPUPart1(1, 0xD0);                                                                // MPU0
+    initMPUPart1(2, 0xD0);                                                                  // MPU1
+    wait_ms(200);
+    initMPUPart2(1, 0xD0, MPU0_X_ACCEL_OFFSET, MPU0_Y_ACCEL_OFFSET, MPU0_Z_ACCEL_OFFSET,  // MPU0
+                MPU0_X_GYRO_OFFSET, MPU0_Y_GYRO_OFFSET, MPU0_Z_GYRO_OFFSET);
+    initMPUPart2(2, 0xD0, MPU1_X_ACCEL_OFFSET, MPU1_Y_ACCEL_OFFSET, MPU1_Z_ACCEL_OFFSET,    // MPU1
+                MPU1_X_GYRO_OFFSET, MPU1_Y_GYRO_OFFSET, MPU1_Z_GYRO_OFFSET);
 
+    initMPUPart3(1, 0xD0, 0);                                                             // MPU0
+    wait_us(200);
+    initMPUPart3(2, 0xD0, 1);                                                               // MPU1
+    wait_us(200);   
+
+    i2cMPUCurrentUser = 0;
+
+    
+    NVIC_EnableIRQ(EXTI0_IRQn);                                                             // MPU0
+    NVIC_EnableIRQ(EXTI1_IRQn);                                                             // MPU1
+    
+    
     // Evaluar comunicación I2C con MPU 
 
     while(TRUE){
-        //GPIOC->ODR ^= GPIO_ODR_ODR13;	                                    // Toggle PC13			
+        //GPIOC->ODR ^= GPIO_ODR_ODR13;	                                                    // Toggle PC13			
         //wait_ms(500);
 
         // Lectura de botones:
@@ -568,7 +233,8 @@ int main(void){
 
         // I2C RX-TX:
 
-        getMPUData(0xD0, &MPU0InterruptionCounter, &MPU0InterruptionFlag,   // MPU0
+
+        getMPUData(1, 0xD0, &MPU0InterruptionCounter, &MPU0InterruptionFlag,              // MPU0
             &MPU0wQuat, &MPU0xQuat, &MPU0yQuat, &MPU0zQuat, 
             &MPU0xGyro, &MPU0yGyro, &MPU0zGyro, 
             &MPU0xAccel, &MPU0yAccel, &MPU0zAccel, 
@@ -577,34 +243,44 @@ int main(void){
             &averageMPU0Yaw, &averageMPU0Pitch, &averageMPU0Roll, 
             &filterCounterMPU0, &offsetMPU0Yaw, &offsetMPU0Pitch, &offsetMPU0Roll); 
 
-/*         
-        getMPUData(0xD1, &MPU1InterruptionCounter, &MPU1InterruptionFlag,   // MPU1
+
+         
+        getMPUData(2, 0xD0, &MPU1InterruptionCounter, &MPU1InterruptionFlag,                // MPU1
             &MPU1wQuat, &MPU1xQuat, &MPU1yQuat, &MPU1zQuat, 
             &MPU1xGyro, &MPU1yGyro, &MPU1zGyro, 
             &MPU1xAccel, &MPU1yAccel, &MPU1zAccel, 
             &MPU1RawData, &MPU1SampleReadyFlag, &MPU1Quaternion, &MPU1Gravity,
             &MPU1Yaw, &MPU1Pitch, &MPU1Roll,
             &averageMPU1Yaw, &averageMPU1Pitch, &averageMPU1Roll, 
-            &filterCounterMPU1, &offsetMPU1Yaw, &offsetMPU1Pitch, &offsetMPU1Roll); ; 
-*/
+            &filterCounterMPU1, &offsetMPU1Yaw, &offsetMPU1Pitch, &offsetMPU1Roll);  
 
-        MPU1SampleReadyFlag = 1;
-        filterCounterMPU1 = 2000; 
+
+
+        //MPU1SampleReadyFlag = 1;        
+        //filterCounterMPU1 = 600;
+         
 
 
         
         // UART TX:           
-
+        printManager();
         if(MPU0SampleReadyFlag && MPU1SampleReadyFlag && (uartTxEmptyBufferFlag == 0)){
             
             //printf("%1d,%1d,%06d,%06d,%06d,%06d\r\n",Button0,Button1,MPU0Yaw,MPU0Pitch,MPU1Yaw,MPU1Pitch);
-            //printf("%1d,%1d,%06d,%06d,%06d,%06d\r\n",Button0,Button1,MPU0Yaw,MPU0Pitch,MPU0Roll,MPU0xGyro);
-            
+            //printf("%1d,%1d,%06d,%06d,%06d,%06d\r\n",Button0,Button1,MPU0Yaw,MPU0Pitch,MPU0Roll,MPU0xGyro);            
             
             //printf("%1d,%1d,%05d,%05d,%05d,%05d\r\n", Button0, Button1, MPU0PitchSendable, MPU0RollSendable, MPU1PitchSendable, MPU1RollSendable);
-            if((filterCounterMPU0 >=200) && (filterCounterMPU1 >=200)){
-                //printf("%d,%d\r\n",(int)(MPU0Pitch*1000),(int)(MPU0Roll*1000));
-                printf("%1d,%1d,%05d,%05d,%05d,%05d\r\n", Button0, Button1, (int)(MPU0Pitch*1000), (int)(MPU0Roll*1000), (int)(MPU1Pitch*1000), (int)(MPU1Roll*1000));
+            if((filterCounterMPU0 >=600) && (filterCounterMPU1 >=600)){
+
+                if(uartSamplingCounter<4){
+                    uartSamplingCounter++;
+                }else{
+                    //printf("%d,%d\r\n",(int)(MPU0Pitch*1000),(int)(MPU0Roll*1000));
+                    printf("%1d,%1d,%05d,%05d,%05d,%05d\r\n", Button0, Button1, (int)(MPU0Pitch*1000), (int)(MPU0Roll*1000), (int)(MPU1Pitch*1000), (int)(MPU1Roll*1000));
+                    uartSamplingCounter = 0;
+                }
+
+              
             }
 
             MPU1SampleReadyFlag = 0;

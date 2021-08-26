@@ -26,13 +26,14 @@ void initUART(void){
 	GPIOA->CRH &= ~GPIO_CRH_MODE10;    						// MODE10 = 00, PA10 como entrada
 	GPIOA->CRH |= GPIO_CRH_CNF10_1;    						// CNF10 = 10, PA10 como entrada push pull
 	
-	initDMA();												// Inicializar DMA en caso de que este seleccionado UART_COMPLEX_MODE
+
+	
 
 	//	Baudios 115200, Baudios = 72MHz/16*USARTDIV, USARTDIV = 39.0625, BRR = 0x0271 
 
 	//	Baudios 230400, Baudios = 72MHz/16*USARTDIV, USARTDIV = 19.05, BRR = 0x0138, real: 230769
 
-	USART1->BRR = (0x0138); 								// Parte entera y decimal del preescaler de Baudios
+	USART1->BRR = (0x0271); 								// Parte entera y decimal del preescaler de Baudios
 	USART1->CR1 |= USART_CR1_TE;							// TE=1, Habilitar transmisor
 	USART1->CR1 |= USART_CR1_RE;							// RE=1, Habilitar receptor
 
@@ -43,20 +44,31 @@ void initUART(void){
 
 	//	Primera transmisión (vaciá)
 
-	USART1->DR = (0x04);									// Primera transmisión basura
-	while(!(USART1->SR & USART_SR_TC)); 					// TC=1? Esperar a que se complete la transmisión
+	//USART1->DR = (0x04);									// Primera transmisión basura
+	//while(!(USART1->SR & USART_SR_TC)); 					// TC=1? Esperar a que se complete la transmisión
+
+	initDataTransferMethod();								// Inicializar DMA o Interrupciones, según el modo seleccionado
 	
 	
 }
 
-void initDMASimpleMode(void){
+void initSimpleMode(void){
 }
 
-void initDMAComplexMode(void){
+
+// void initInterruptMode(void){
+// 	USART1->CR1 |= USART_CR1_TXEIE;							// Habilitar interrupcion de Transmit data register empty
+// 	NVIC_EnableIRQ(USART1_IRQn);                   			// Habilitar interrupciones de USART1
+
+// }
+
+
+void initDMA(void){
 	RCC->AHBENR |= RCC_AHBENR_DMA1EN;						// Activar reloj de DMA
-
 	USART1->CR3 |= USART_CR3_DMAT;							// Habilitar DMA para transmisión
-	NVIC_EnableIRQ(DMA1_Channel4_IRQn);                   	// Habilitar interrupciones del canal 4 DMA1 	
+	DMA1_Channel4->CCR |= DMA_CCR_PL_Msk;					// Maxima prioridad
+
+	NVIC_EnableIRQ(DMA1_Channel4_IRQn);                   	// Habilitar interrupciones del canal 4 DMA1	
 	uartTxEmptyBufferFlag = 0;								// Limpiar flag de trasferencia en curso					
 
 }
@@ -73,6 +85,22 @@ void DMA1_Channel4_IRQHandler(void){
 	
 }
 
+void USART1_IRQHandler(){
+
+	if(USART1->SR & USART_SR_TXE){
+		if(uartTxCounter>0){		
+			USART1->DR = uartTxBuffer[bufferSize-uartTxCounter];
+			
+			uartTxCounter -= 1;
+		}else{
+			uartTxEmptyBufferFlag = 0;								// Desactivar Flag de transmisión
+			USART1->CR1 &= ~USART_CR1_TXEIE;						// Habilitar interrupcion de Transmit data register empty
+			NVIC_DisableIRQ(USART1_IRQn);                   		// Habilitar interrupciones de USART1
+		}
+	}
+	//USART1->SR &= ~USART_SR_TC;									// Limpiar bandera de interrupcion
+}
+
 
 /** 
 * @brief Buffer limitado a ocupación de DMA.
@@ -80,21 +108,19 @@ void DMA1_Channel4_IRQHandler(void){
 void complexPrint(char *msg, ...){
 
 	if(uartTxEmptyBufferFlag == 0){
-		char buff[300];
+
 		va_list args;
 		va_start(args,msg);
-		vsprintf(buff,msg,args);
+		vsprintf(uartTxBuffer,msg,args);
 		uartTxEmptyBufferFlag = 1;							// Activar Flag de transferencia en curso
-		bufferSize = strlen(buff);
-
-		for(int i = 0; i < bufferSize; i++){
-			uartTxBuffer[i]=buff[i];		
-		}
+		bufferSize = strlen(uartTxBuffer);
 		uartTxBuffer[bufferSize]=0x00;						// Carácter de final de trama
+		bufferSize += 1;
+
 		DMA1_Channel4->CMAR = (unsigned int)&uartTxBuffer;	// Dirección de memoria de buffer de lectura
 		DMA1_Channel4->CPAR = (unsigned int)&USART1->DR;	// Dirección de periférico
 
-		DMA1_Channel4->CNDTR = bufferSize+1;				// Numero de Bytes a ser transferidos
+		DMA1_Channel4->CNDTR = bufferSize;					// Numero de Bytes a ser transferidos
 		DMA1_Channel4->CCR |= DMA_CCR_TCIE;					// Habilitar interrupcion de transferencia completada
 		DMA1_Channel4->CCR |= DMA_CCR_MINC;					// Activar incremento de memoria CMAR, cada vez que se realize una transferencia
 		DMA1_Channel4->CCR |= DMA_CCR_DIR;					// Dirección de transferencia Memoria->Periférico
@@ -116,33 +142,71 @@ void complexPrint(char *msg, ...){
 
 
 void simplePrint(char *msg, ...){
-	char buffer[100];
+
 	va_list args;
 	va_start(args,msg);
-	vsprintf(buffer,msg,args);
+	vsprintf(uartTxBuffer,msg,args);
+	bufferSize = strlen(uartTxBuffer);
 
-	for(int i=0; i<strlen(buffer); i++){
-		USART1->DR = buffer[i];
+	uartTxBuffer[bufferSize]=0x00;							// Carácter de final de trama
+	bufferSize += 1;
+
+	for(int i=0; i<bufferSize; i++){
+		USART1->DR = uartTxBuffer[i];
 		while(!(USART1->SR & USART_SR_TC));
 	}
 }
-// Pending
+
+
+
 void interruptPrint(char *msg, ...){
 
-	char buff[300];
+	
 	va_list args;
 	va_start(args,msg);
-	vsprintf(buff,msg,args);
-	uartTxEmptyBufferFlag = 1;							// Activar Flag de transferencia en curso
-	bufferSize = strlen(buff);
+	vsprintf(uartTxBuffer,msg,args);
 
-	for(int i = 0; i < bufferSize; i++){
-		uartTxBuffer[i]=buff[i];		
-	}
-	uartTxBuffer[bufferSize]=0x00;						// Carácter de final de trama
+	
+	bufferSize = strlen(uartTxBuffer);
+	uartTxBuffer[bufferSize]=0x00;							// Carácter de final de trama
+	uartTxCounter = bufferSize + 1;							// Contador toma el valor del tamaño del arreglo
+	bufferSize += 1;										// Reajustar tamaño del buffer
 
 
+	USART1->DR = uartTxBuffer[bufferSize-uartTxCounter];
+	uartTxCounter -= 1;
+	uartTxEmptyBufferFlag = 1;								// Activar Flag de transferencia en curso
+
+	USART1->CR1 |= USART_CR1_TXEIE;							// Habilitar interrupcion de Transmit data register empty
+	NVIC_EnableIRQ(USART1_IRQn);                   			// Habilitar interrupciones de USART1
 
 }
 
 
+void pollingOptimalPrint(char *msg, ...){
+	va_list args;
+	va_start(args,msg);
+	vsprintf(uartTxBuffer,msg,args);
+
+	bufferSize = strlen(uartTxBuffer);
+	uartTxBuffer[bufferSize]=0x00;							// Carácter de final de trama
+	uartTxCounter = bufferSize + 1;							// Contador toma el valor del tamaño del arreglo
+	bufferSize += 1;										// Reajustar tamaño del buffer
+
+	USART1->DR = uartTxBuffer[bufferSize-uartTxCounter];
+	uartTxCounter -= 1;
+	uartTxEmptyBufferFlag = 1;								// Activar Flag de transferencia en curso
+
+}
+
+void pollingOptimalPrintManager(void){
+	if(USART1->SR & USART_SR_TC){
+		if(uartTxCounter>0){
+			USART1->DR = uartTxBuffer[bufferSize-uartTxCounter];
+			uartTxCounter -= 1;
+		}else{
+			uartTxEmptyBufferFlag = 0;						// Desactivar Flag de transmisión
+		}
+	} 					
+
+}
