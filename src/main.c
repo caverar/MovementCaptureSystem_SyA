@@ -180,8 +180,8 @@ void EXTI0_IRQHandler(){
 
 void getButtonsData(unsigned char* Button0, unsigned char* Button1){
 
-    *Button0 = GPIOA->ODR |= GPIO_ODR_ODR0;
-    *Button1 = GPIOA->ODR |= GPIO_ODR_ODR1;
+    *Button0 = GPIOA->IDR & GPIO_IDR_IDR0;
+    *Button1 = (GPIOA->IDR & GPIO_IDR_IDR1) >> 1;
 }
 
 
@@ -220,7 +220,7 @@ int main(void){
     NVIC_EnableIRQ(EXTI0_IRQn);                                                             // MPU0
     NVIC_EnableIRQ(EXTI1_IRQn);                                                             // MPU1
     
-    
+    printf("Calibrando...");
     // Evaluar comunicación I2C con MPU 
 
     while(TRUE){
@@ -229,7 +229,7 @@ int main(void){
 
         // Lectura de botones:
 
-        //getButtonsData(&Button0, &Button1);
+        getButtonsData(&Button0, &Button1);
 
         // I2C RX-TX:
 
@@ -270,6 +270,8 @@ int main(void){
             //printf("%1d,%1d,%06d,%06d,%06d,%06d\r\n",Button0,Button1,MPU0Yaw,MPU0Pitch,MPU0Roll,MPU0xGyro);            
             
             //printf("%1d,%1d,%05d,%05d,%05d,%05d\r\n", Button0, Button1, MPU0PitchSendable, MPU0RollSendable, MPU1PitchSendable, MPU1RollSendable);
+            
+
             if((filterCounterMPU0 >=600) && (filterCounterMPU1 >=600)){
 
                 if(uartSamplingCounter<4){
