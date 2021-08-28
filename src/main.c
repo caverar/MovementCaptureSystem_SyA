@@ -199,6 +199,19 @@ int main(void){
     initUART();
     initTimer4();
 
+
+    simplePrint("Preparese, 5 segundos para iniciar calibracion...\r\n");
+    wait_ms(1000);    
+    simplePrint("4 segundos para iniciar calibracion...\r\n");
+    wait_ms(1000);
+    simplePrint("3 segundos para iniciar calibracion...\r\n");
+    wait_ms(1000); 
+     simplePrint("2 segundos para iniciar calibracion...\r\n");
+    wait_ms(1000);     
+    simplePrint("1 segundo para iniciar calibracion...\r\n");
+    wait_ms(1000);
+
+
     //--PERIFÉRICOS EXTERNOS----------------------------------------------------------------------------------
 
     initMPUPart1(1, 0xD0);                                                                // MPU0
@@ -220,7 +233,7 @@ int main(void){
     NVIC_EnableIRQ(EXTI0_IRQn);                                                             // MPU0
     NVIC_EnableIRQ(EXTI1_IRQn);                                                             // MPU1
     
-    printf("Calibrando...");
+    printf("Porfavor no se mueva, Calibrando...\r\n");
     // Evaluar comunicación I2C con MPU 
 
     while(TRUE){

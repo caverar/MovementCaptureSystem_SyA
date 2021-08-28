@@ -16,6 +16,8 @@ unsigned char dummyRead;
 void initDMA(void);
 void initSimpleMode(void);
 
+void simplePrint(char *msg, ...);
+
 
 char uartTxBuffer[300];
 unsigned int bufferSize;
@@ -31,7 +33,7 @@ void complexPrint(char *msg, ...);
 
 #ifdef UART_SIMPLE_MODE 
 #define initDataTransferMethod(void) initSimpleMode(void);
-void simplePrint(char *msg, ...);
+
 #define printf(msg, args...) simplePrint(msg, ##args);
 #endif
 
